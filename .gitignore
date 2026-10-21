@@ -1,0 +1,51 @@
+# ─── Build output ────────────────────────────────────────────────────────────
+build/
+out/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+
+# ─── CMake generated files ───────────────────────────────────────────────────
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+compile_commands.json
+
+# ─── Python virtual environment ──────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ─── IDE and editor ──────────────────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.vscode/c_cpp_properties.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS generated ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Logs and diagnostics ────────────────────────────────────────────────────
+*.log
+*.err
+
+# ─── NNUE network weights (large binary files — do not commit without approval) ─
+networks/*.nnue
+networks/*.bin
+
+# ─── Benchmark and profiling output ──────────────────────────────────────────
+*.perf
+*.prof
+gmon.out
