@@ -53,6 +53,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 #
 add_library(chess_core STATIC
     src/board.cpp
+    src/movegen.cpp
 )
 
 target_include_directories(chess_core PUBLIC
@@ -87,6 +88,35 @@ target_include_directories(test_chess PRIVATE
 target_link_libraries(test_chess PRIVATE chess_core)
 
 add_test(NAME UnitTests COMMAND test_chess)
+
+# Phase 2 unit tests: movegen
+add_executable(test_movegen
+    tests/unit/test_main.cpp
+    tests/unit/test_movegen.cpp
+)
+
+target_include_directories(test_movegen PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_movegen PRIVATE chess_core)
+
+add_test(NAME MovegenTests COMMAND test_movegen)
+
+# Phase 2 perft tests
+add_executable(test_perft
+    tests/perft/test_perft.cpp
+)
+
+target_include_directories(test_perft PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}           # for tests/perft/perft.hpp include path
+    ${PROJECT_SOURCE_DIR}/tests/unit  # for test_framework.hpp
+)
+
+target_link_libraries(test_perft PRIVATE chess_core)
+
+add_test(NAME PerftTests COMMAND test_perft)
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)
