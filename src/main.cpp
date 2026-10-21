@@ -17,7 +17,7 @@
 
 // Engine identity — update these when the final name is confirmed.
 static constexpr const char* ENGINE_NAME    = "LightweightChessEngine";
-static constexpr const char* ENGINE_AUTHOR  = "Chess Engine Intern";
+static constexpr const char* ENGINE_AUTHOR  = "Rahat Sultan";
 static constexpr const char* ENGINE_VERSION = "0.1.0-phase0";
 
 /**

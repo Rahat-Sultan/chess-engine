@@ -46,11 +46,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ─── Include paths ────────────────────────────────────────────────────────────
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# ─── Engine executable ───────────────────────────────────────────────────────
+# ─── Engine library (shared between executable and tests) ────────────────────
 #
-# Only main.cpp exists in Phase 0.
-# Each subsequent phase adds the relevant .cpp files to this list.
+# Board and other engine modules are compiled into a static library so the
+# test executable can link them without duplicating compilation.
 #
+add_library(chess_core STATIC
+    src/board.cpp
+)
+
+target_include_directories(chess_core PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+# ─── Engine executable ────────────────────────────────────────────────────────
 add_executable(chess_engine
     src/main.cpp
 )
@@ -59,15 +68,25 @@ target_include_directories(chess_engine PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
 
+target_link_libraries(chess_engine PRIVATE chess_core)
+
 # ─── Tests ────────────────────────────────────────────────────────────────────
 enable_testing()
 
-# Test targets will be added in Phase 1+ as test source files are created.
-# Example for reference (uncomment when tests/unit/test_types.cpp exists):
-#
-# add_executable(test_types tests/unit/test_types.cpp src/board.cpp)
-# target_include_directories(test_types PRIVATE ${PROJECT_SOURCE_DIR}/include)
-# add_test(NAME TypesTest COMMAND test_types)
+# Phase 1 unit tests: types + board
+add_executable(test_chess
+    tests/unit/test_main.cpp
+    tests/unit/test_types.cpp
+    tests/unit/test_board.cpp
+)
+
+target_include_directories(test_chess PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(test_chess PRIVATE chess_core)
+
+add_test(NAME UnitTests COMMAND test_chess)
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)
