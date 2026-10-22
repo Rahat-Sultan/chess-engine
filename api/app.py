@@ -29,6 +29,7 @@ from typing import Optional
 
 import chess
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from api.engine_manager import EngineManager, EngineBusy, EngineNotReady, EngineError
@@ -161,6 +162,14 @@ app = FastAPI(
     ),
     version="0.1.0-phase6",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
