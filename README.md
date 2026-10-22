@@ -42,6 +42,7 @@ backends through an HTTP/JSON adapter.
 |----------|---------|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | **Start here for backend integration** |
 | [`docs/HTTP_API.md`](docs/HTTP_API.md) | Full HTTP API contract and curl examples |
+| [`docs/UCI_COMMANDS.md`](docs/UCI_COMMANDS.md) | **Engine startup guide and all UCI commands** |
 | [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) | Honest list of limitations and next steps |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Performance baseline and safe defaults |
 | [`docs/NNUE_GUIDE.md`](docs/NNUE_GUIDE.md) | NNUE integration guide |
@@ -194,6 +195,7 @@ chess_engine/
 ├── docs/
 │   ├── HANDOFF.md           # ← Backend integration guide
 │   ├── HTTP_API.md          # REST API contract
+│   ├── UCI_COMMANDS.md      # ← Engine startup and all UCI commands
 │   ├── KNOWN_LIMITATIONS.md # Honest limitations list
 │   ├── BENCHMARKS.md        # Performance baseline
 │   ├── NNUE_GUIDE.md        # NNUE integration guide
