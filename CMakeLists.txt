@@ -46,6 +46,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ─── Include paths ────────────────────────────────────────────────────────────
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
+# ─── Threading support ───────────────────────────────────────────────────────
+find_package(Threads REQUIRED)
+
 # ─── Engine library (shared between executable and tests) ────────────────────
 #
 # Board and other engine modules are compiled into a static library so the
@@ -56,10 +59,15 @@ add_library(chess_core STATIC
     src/movegen.cpp
     src/evaluation.cpp
     src/search.cpp
+    src/uci.cpp
 )
 
 target_include_directories(chess_core PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(chess_core PUBLIC
+    Threads::Threads
 )
 
 # ─── Engine executable ────────────────────────────────────────────────────────
@@ -134,6 +142,21 @@ target_include_directories(test_search PRIVATE
 target_link_libraries(test_search PRIVATE chess_core)
 
 add_test(NAME SearchTests COMMAND test_search)
+
+# Phase 4 unit tests: uci protocol controller
+add_executable(test_uci
+    tests/unit/test_main.cpp
+    tests/uci/test_uci.cpp
+)
+
+target_include_directories(test_uci PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/unit
+)
+
+target_link_libraries(test_uci PRIVATE chess_core)
+
+add_test(NAME UciTests COMMAND test_uci)
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)

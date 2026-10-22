@@ -246,6 +246,10 @@ SearchResult Searcher::search(Board& board) {
         result.depth     = 1;
         result.nodes     = 1;
         result.elapsed_ms= elapsed_ms();
+        result.pv        = {root_moves[0]};
+        if (info_callback_) {
+            info_callback_(result);
+        }
         return result;
     }
 
@@ -268,6 +272,10 @@ SearchResult Searcher::search(Board& board) {
             result.nodes      = nodes_;
             result.elapsed_ms = elapsed_ms();
             result.pv         = pv;
+
+            if (info_callback_) {
+                info_callback_(result);
+            }
         }
 
         // Stop if we found a forced mate

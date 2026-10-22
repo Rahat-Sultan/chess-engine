@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -62,6 +63,10 @@ public:
     /** Reset stop flag (call before each new search). */
     void reset() noexcept;
 
+    /** Callback invoked after each completed depth during iterative deepening. */
+    using InfoCallback = std::function<void(const SearchResult&)>;
+    void set_info_callback(InfoCallback cb) { info_callback_ = std::move(cb); }
+
     /** Nodes searched in the last search() call. */
     uint64_t nodes() const noexcept { return nodes_; }
 
@@ -69,6 +74,7 @@ private:
     Evaluator&   evaluator_;
     SearchLimits limits_;
     std::atomic<bool> stop_flag_{false};
+    InfoCallback info_callback_;
 
     // Per-search state
     uint64_t     nodes_       = 0;

@@ -144,6 +144,10 @@ dependency and applicable license.
 | D-8 | Castling rights stored as a 4-bit flag (KQkq) | Compact, reversible, standard | 1 |
 | D-9 | En-passant target stored as `Square` (`NO_SQ` when none) | Matches FEN semantics directly | 1 |
 | D-10 | `Move` encoded as from+to+flags in a `uint32_t` | Avoids heap allocation in the search loop | 1 |
+| D-11 | Asynchronous worker thread for search | Allows engine to accept `stop`, `isready`, and `quit` during calculation | 4 |
+| D-12 | Mutex-synchronized stdout & flushed responses | Prevents line interleaving; satisfies UCI interactive stream requirements | 4 |
+| D-13 | Board copy for search worker thread | Completely eliminates data races on `Board` between search and command loop | 4 |
+| D-14 | CRLF line ending normalization | Robust cross-platform UCI stream compatibility (Windows / Linux) | 4 |
 
 ---
 

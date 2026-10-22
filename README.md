@@ -12,10 +12,10 @@ A later phase will add an HTTP/JSON adapter for backend integration.
 | Phase | Description                          | Status      |
 |-------|--------------------------------------|-------------|
 | 0     | Environment & build scaffold         | ✅ Done     |
-| 1     | Types, board representation, FEN     | 🔲 Pending  |
-| 2     | Move generation & rules              | 🔲 Pending  |
-| 3     | Evaluation & search                  | 🔲 Pending  |
-| 4     | UCI protocol controller              | 🔲 Pending  |
+| 1     | Types, board representation, FEN     | ✅ Done     |
+| 2     | Move generation & rules              | ✅ Done     |
+| 3     | Evaluation & search                  | ✅ Done     |
+| 4     | UCI protocol controller              | ✅ Done     |
 | 5     | Resource limits & performance tuning | 🔲 Pending  |
 | 6     | HTTP/JSON adapter                    | 🔲 Pending  |
 | 7     | NNUE integration (optional)          | 🔲 Pending  |
