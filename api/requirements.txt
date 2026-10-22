@@ -1,0 +1,12 @@
+# Phase 6 — HTTP/JSON adapter dependencies
+#
+# Install in a virtual environment:
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r api/requirements.txt
+
+fastapi==0.159.1
+uvicorn==0.54.0
+httpx==0.28.1
+pytest==9.1.1
+chess==1.11.2

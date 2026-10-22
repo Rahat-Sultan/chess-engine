@@ -24,6 +24,7 @@
 #include "chess/board.hpp"
 #include "chess/evaluation.hpp"
 #include "chess/movegen.hpp"
+#include "chess/transposition.hpp"
 #include "chess/types.hpp"
 
 #include <atomic>
@@ -63,6 +64,18 @@ public:
     /** Reset stop flag (call before each new search). */
     void reset() noexcept;
 
+    /**
+     * Set an optional transposition table for caching.
+     * Pass nullptr to disable TT usage.
+     */
+    void set_transposition_table(TranspositionTable* tt) noexcept { tt_ = tt; }
+
+    /**
+     * Replace the evaluator (called when UCI EvalFile option changes).
+     * Must not be called while a search is in progress.
+     */
+    void set_evaluator(Evaluator& evaluator) noexcept { evaluator_ = &evaluator; }
+
     /** Callback invoked after each completed depth during iterative deepening. */
     using InfoCallback = std::function<void(const SearchResult&)>;
     void set_info_callback(InfoCallback cb) { info_callback_ = std::move(cb); }
@@ -71,10 +84,13 @@ public:
     uint64_t nodes() const noexcept { return nodes_; }
 
 private:
-    Evaluator&   evaluator_;
+    Evaluator*   evaluator_;   // non-owning; set by constructor or set_evaluator()
     SearchLimits limits_;
     std::atomic<bool> stop_flag_{false};
     InfoCallback info_callback_;
+
+    // Optional transposition table (Phase 5)
+    TranspositionTable* tt_ = nullptr;
 
     // Per-search state
     uint64_t     nodes_       = 0;

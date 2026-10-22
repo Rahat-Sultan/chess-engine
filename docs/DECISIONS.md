@@ -16,7 +16,14 @@ wrapper or search backend.
 ---
 
 ## Q2 — Are pretrained Stockfish NNUE weights permitted?
-**Decision: Prefer pretrained NNUE weights, subject to lead approval.**
+**Decision: CONFIRMED — pretrained Stockfish NNUE weights and GPL-3 license are acceptable.**
+
+Lead approval received: "I confirm pretrained Stockfish NNUE weights and their GPL-3 license are
+acceptable for this project." (October 2026)
+
+Attribution requirement: any release must credit the Stockfish project
+and comply with GPL-3. See https://github.com/official-stockfish/Stockfish
+for the full license text.
 
 Start with an original handcrafted evaluator. Design a modular
 `Evaluator` interface so a compatible NNUE implementation can be added
@@ -148,14 +155,30 @@ dependency and applicable license.
 | D-12 | Mutex-synchronized stdout & flushed responses | Prevents line interleaving; satisfies UCI interactive stream requirements | 4 |
 | D-13 | Board copy for search worker thread | Completely eliminates data races on `Board` between search and command loop | 4 |
 | D-14 | CRLF line ending normalization | Robust cross-platform UCI stream compatibility (Windows / Linux) | 4 |
+| D-15 | Zobrist hashing + transposition table | Caches searched positions for cutoffs and move ordering; configurable hash size via UCI `setoption name Hash` | 5 |
+| D-16 | Fail-soft alpha-beta with TT storage | Stores exact/lower/upper bounds with mate-score adjustment for position-independent TT entries | 5 |
+| D-17 | Generation-based TT replacement | Older-generation entries replaced first; within same generation, deeper entries kept. Simple and effective. | 5 |
+| D-18 | Python FastAPI HTTP adapter | Wraps UCI engine in a JSON API; keeps HTTP layer separate from C++ engine core | 6 |
+| D-19 | One concurrent search per engine process | Returns 409 if busy; simple and predictable for first deliverable | 6 |
+| D-20 | python-chess for FEN validation in adapter | Used only in the HTTP layer for input validation, never in the engine itself | 6 |
+| D-21 | Server-side safety timeout (30s) | Prevents unbounded CPU use; sends UCI "stop" and returns partial result | 6 |
+| D-22 | nnue-probe library vendored in src/nnue_probe/ | Lightweight HalfKP probe; no reimplementation of Stockfish inference needed | 7 |
+| D-23 | EvalFile UCI option for runtime NNUE load | Network selectable without recompiling; fallback to handcrafted on any failure | 7 |
+| D-24 | Searcher uses Evaluator* not Evaluator& | Allows live swap of evaluator (handcrafted ↔ NNUE) via set_evaluator() | 7 |
 
 ---
 
 ## Unresolved assumptions
 
-- Minimum hardware specification: unknown until Phase 6 benchmarking.
-- NNUE approval status: pending lead decision (Phase 7 gate).
-- HTTP API schema: must be agreed with the teammate before Phase 5.
+- Minimum hardware specification: Phase 5 baseline measured on Intel
+  i5-8350U with 8 GB RAM. Safe defaults documented in
+  [`docs/BENCHMARKS.md`](BENCHMARKS.md). Confirm on actual target hardware
+  before finalizing minimum requirements.
+- NNUE approval status: **confirmed** (October 2026). Network
+  nn-04cf2b4ed1da.nnue loaded via nnue-probe. See `docs/NNUE_GUIDE.md`.
+- HTTP API schema: agreed and implemented in Phase 6. See
+  [`docs/HTTP_API.md`](HTTP_API.md). Confirm any adjustments with the
+  teammate before integration.
 - Concurrency model for the HTTP adapter: not yet designed.
 - Windows toolchain: exact Windows version (10/11) and compiler (MSVC vs
   MinGW-w64 vs Clang/LLVM) to be confirmed before cross-platform build

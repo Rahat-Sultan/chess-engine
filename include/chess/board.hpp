@@ -18,6 +18,7 @@
 #include "chess/types.hpp"
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <optional>
 
@@ -39,6 +40,7 @@ struct UndoInfo {
     int      halfmove_clock;    // halfmove clock before the move
     // fullmove_number is derivable; we store it for simplicity
     int      fullmove_number;
+    uint64_t zobrist_key;       // position hash before the move
 };
 
 // ─── Board ───────────────────────────────────────────────────────────────────
@@ -77,6 +79,9 @@ public:
     uint8_t castling_rights()const noexcept { return castling_rights_; }
     int halfmove_clock()     const noexcept { return halfmove_clock_; }
     int fullmove_number()    const noexcept { return fullmove_number_; }
+
+    /** Zobrist hash key of the current position. */
+    uint64_t zobrist_key()   const noexcept { return zobrist_key_; }
 
     bool can_castle_wk() const noexcept { return (castling_rights_ & CR_WK) != 0; }
     bool can_castle_wq() const noexcept { return (castling_rights_ & CR_WQ) != 0; }
@@ -122,6 +127,7 @@ private:
     uint8_t castling_rights_ = CR_ALL;       // D-8
     int     halfmove_clock_  = 0;
     int     fullmove_number_ = 1;
+    uint64_t zobrist_key_    = 0;   // D-15: Zobrist hash for transposition table
 
     // ── Private helpers ───────────────────────────────────────────────────────
     void clear();
@@ -130,6 +136,9 @@ private:
 
     // Update castling rights when a piece moves from/to a critical square
     void revoke_castling(Square from, Square to) noexcept;
+
+    // Recompute the full Zobrist key from scratch (called by set_fen)
+    void compute_zobrist() noexcept;
 };
 
 } // namespace chess

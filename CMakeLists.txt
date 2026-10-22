@@ -59,11 +59,23 @@ add_library(chess_core STATIC
     src/movegen.cpp
     src/evaluation.cpp
     src/search.cpp
+    src/transposition.cpp
     src/uci.cpp
+    src/nnue_evaluator.cpp
+    src/nnue_probe/nnue.cpp
+    src/nnue_probe/misc.cpp
+)
+
+# Suppress warnings from vendored nnue-probe C sources (they are not our code)
+set_source_files_properties(
+    src/nnue_probe/nnue.cpp
+    src/nnue_probe/misc.cpp
+    PROPERTIES COMPILE_FLAGS "-w"
 )
 
 target_include_directories(chess_core PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src    # for nnue_probe/ relative includes
 )
 
 target_link_libraries(chess_core PUBLIC
@@ -157,6 +169,38 @@ target_include_directories(test_uci PRIVATE
 target_link_libraries(test_uci PRIVATE chess_core)
 
 add_test(NAME UciTests COMMAND test_uci)
+
+# Phase 5 unit tests: transposition table
+add_executable(test_transposition
+    tests/unit/test_main.cpp
+    tests/unit/test_transposition.cpp
+)
+
+target_include_directories(test_transposition PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/unit
+)
+
+target_link_libraries(test_transposition PRIVATE chess_core)
+
+add_test(NAME TranspositionTests COMMAND test_transposition)
+
+# Phase 7 unit tests: NNUE evaluator
+add_executable(test_nnue
+    tests/unit/test_main.cpp
+    tests/unit/test_nnue.cpp
+)
+
+target_include_directories(test_nnue PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/unit
+)
+
+target_link_libraries(test_nnue PRIVATE chess_core)
+
+add_test(NAME NNUETests COMMAND test_nnue
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+install(TARGETS chess_engine DESTINATION bin)
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)

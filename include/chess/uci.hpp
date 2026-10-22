@@ -14,7 +14,9 @@
 
 #include "chess/board.hpp"
 #include "chess/evaluation.hpp"
+#include "chess/nnue_evaluator.hpp"
 #include "chess/search.hpp"
+#include "chess/transposition.hpp"
 #include "chess/types.hpp"
 
 #include <atomic>
@@ -29,7 +31,7 @@ namespace chess {
 // Engine metadata
 inline constexpr const char* UCI_ENGINE_NAME    = "LightweightChessEngine";
 inline constexpr const char* UCI_ENGINE_AUTHOR  = "Rahat Sultan";
-inline constexpr const char* UCI_ENGINE_VERSION = "0.1.0-phase4";
+inline constexpr const char* UCI_ENGINE_VERSION = "0.1.0-phase7";
 
 class UciController {
 public:
@@ -81,6 +83,9 @@ public:
     /** Configured search threads. */
     int threads() const noexcept { return threads_; }
 
+    /** Path to the currently loaded NNUE file (empty = handcrafted eval). */
+    const std::string& eval_file() const noexcept { return eval_file_; }
+
 private:
     std::istream& in_;
     std::ostream& out_;
@@ -88,6 +93,7 @@ private:
 
     std::unique_ptr<Evaluator> evaluator_;
     Searcher                   searcher_;
+    TranspositionTable         tt_;
     Board                      board_;
 
     std::thread        search_thread_;
@@ -96,6 +102,7 @@ private:
 
     int hash_size_mb_ = 16;
     int threads_      = 1;
+    std::string eval_file_;   // empty = use HandcraftedEvaluator
 
     // ── Command handlers ──────────────────────────────────────────────────────
     void handle_uci();

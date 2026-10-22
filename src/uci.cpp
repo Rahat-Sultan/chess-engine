@@ -20,8 +20,10 @@ UciController::UciController(std::istream& in, std::ostream& out,
     , evaluator_(evaluator ? std::move(evaluator)
                            : std::make_unique<HandcraftedEvaluator>())
     , searcher_(*evaluator_)
+    , tt_()
     , board_()
 {
+    searcher_.set_transposition_table(&tt_);
     searcher_.set_info_callback([this](const SearchResult& res) {
         on_search_info(res);
     });
@@ -110,6 +112,9 @@ void UciController::on_search_info(const SearchResult& res) {
                        " time " + std::to_string(res.elapsed_ms) +
                        " nodes " + std::to_string(res.nodes) +
                        " nps " + std::to_string(nps);
+    if (tt_.num_entries() > 0) {
+        line += " hashfull " + std::to_string(tt_.hash_full_permille());
+    }
     if (!pv_str.empty()) {
         line += " pv " + pv_str;
     }
@@ -178,6 +183,7 @@ void UciController::handle_uci() {
     resp += std::string("id author ") + UCI_ENGINE_AUTHOR + "\n";
     resp += "option name Hash type spin default 16 min 1 max 1024\n";
     resp += "option name Threads type spin default 1 min 1 max 1\n";
+    resp += "option name EvalFile type string default <empty>\n";
     resp += "uciok\n";
     send_response(resp);
 }
@@ -214,6 +220,7 @@ void UciController::handle_setoption(const std::string& args) {
             int mb = std::stoi(value);
             mb = std::max(1, std::min(1024, mb));
             hash_size_mb_ = mb;
+            tt_.resize(static_cast<std::size_t>(mb));
         } catch (...) {}
     } else if (name == "Threads") {
         try {
@@ -221,6 +228,25 @@ void UciController::handle_setoption(const std::string& args) {
             th = std::max(1, std::min(1, th));
             threads_ = th;
         } catch (...) {}
+    } else if (name == "EvalFile") {
+        eval_file_ = value;
+        // Load immediately: try NNUE, fall back to handcrafted on failure
+        if (!value.empty()) {
+            auto nnue = std::make_unique<chess::NNUEEvaluator>(value);
+            if (nnue->is_loaded()) {
+                evaluator_ = std::move(nnue);
+                searcher_.set_evaluator(*evaluator_);
+                std::cerr << "info string Switched to NNUE evaluator: "
+                          << chess::NNUEEvaluator::network_name() << "\n";
+            } else {
+                std::cerr << "info string NNUE load failed — keeping handcrafted evaluator\n";
+            }
+        } else {
+            // Empty string → revert to handcrafted
+            evaluator_ = std::make_unique<chess::HandcraftedEvaluator>();
+            searcher_.set_evaluator(*evaluator_);
+            std::cerr << "info string EvalFile cleared — using handcrafted evaluator\n";
+        }
     } else {
         std::cerr << "info string Warning: unrecognized option '" << name << "'\n";
     }
@@ -229,6 +255,7 @@ void UciController::handle_setoption(const std::string& args) {
 void UciController::handle_ucinewgame() {
     stop_search();
     board_ = Board();
+    tt_.clear();
 }
 
 void UciController::handle_position(const std::string& args) {

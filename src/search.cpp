@@ -20,16 +20,35 @@
 #include "chess/search.hpp"
 #include "chess/evaluation.hpp"
 #include "chess/movegen.hpp"
+#include "chess/transposition.hpp"
 
 #include <algorithm>
 #include <cassert>
 
 namespace chess {
 
+// ─── Mate score adjustment for TT storage ────────────────────────────────────
+//
+// Mate scores encode distance relative to the root. When we store in the TT
+// we make them position-independent (relative to the node), and adjust back
+// when retrieving.
+
+static int adjust_to_tt(int score, int ply) noexcept {
+    if (score > SCORE_MATE - 1000)  return score + ply;
+    if (score < -SCORE_MATE + 1000) return score - ply;
+    return score;
+}
+
+static int adjust_from_tt(int score, int ply) noexcept {
+    if (score > SCORE_MATE - 1000)  return score - ply;
+    if (score < -SCORE_MATE + 1000) return score + ply;
+    return score;
+}
+
 // ─── Construction ─────────────────────────────────────────────────────────────
 
 Searcher::Searcher(Evaluator& evaluator)
-    : evaluator_(evaluator)
+    : evaluator_(&evaluator)
 {
     // Default: depth 6 if no limits set
     limits_.depth = 6;
@@ -124,7 +143,7 @@ int Searcher::quiescence(Board& board, int alpha, int beta, int ply) {
 
     // Stand-pat: evaluate the position statically. If it's already good enough
     // for beta cutoff we can prune (we're not obliged to capture).
-    int stand_pat = evaluator_.evaluate(board);
+    int stand_pat = evaluator_->evaluate(board);
     if (stand_pat >= beta) return beta;
     if (stand_pat > alpha)  alpha = stand_pat;
 
@@ -165,6 +184,24 @@ int Searcher::negamax(Board& board, int depth, int alpha, int beta,
 
     if (should_stop()) return alpha;
 
+    // ── Transposition table probe ─────────────────────────────────────────────
+
+    const uint64_t key = board.zobrist_key();
+    Move tt_move = NULL_MOVE;
+
+    if (tt_) {
+        const TTEntry* entry = tt_->probe(key);
+        if (entry) {
+            tt_move = unpack_move(entry->move);
+            if (static_cast<int>(entry->depth) >= depth) {
+                int score = adjust_from_tt(entry->score, ply);
+                if (entry->bound == BOUND_EXACT) return score;
+                if (entry->bound == BOUND_LOWER && score >= beta) return score;
+                if (entry->bound == BOUND_UPPER && score <= alpha) return score;
+            }
+        }
+    }
+
     // ── Leaf node ─────────────────────────────────────────────────────────────
 
     if (depth <= 0) {
@@ -188,9 +225,24 @@ int Searcher::negamax(Board& board, int depth, int alpha, int beta,
 
     order_moves(moves, board);
 
+    // Move the TT best move to front for better ordering
+    if (tt_move.is_valid()) {
+        for (std::size_t i = 0; i < moves.size(); ++i) {
+            if (moves[i].from == tt_move.from && moves[i].to == tt_move.to) {
+                if (i > 0) {
+                    Move tmp   = moves[0];
+                    moves[0]   = moves[i];
+                    moves[i]   = tmp;
+                }
+                break;
+            }
+        }
+    }
+
     std::vector<Move> child_pv;
-    Move best_move = moves[0];
-    bool raised_alpha = false;
+    Move best_move   = moves[0];
+    int  best_score  = -SCORE_INFINITY;
+    int  orig_alpha  = alpha;
 
     for (const Move& m : moves) {
         UndoInfo undo = board.make_move(m);
@@ -199,23 +251,37 @@ int Searcher::negamax(Board& board, int depth, int alpha, int beta,
 
         if (should_stop()) break;
 
-        if (score >= beta) {
-            return beta;  // fail-hard beta cutoff
+        if (score > best_score) {
+            best_score = score;
+            best_move  = m;
         }
+
         if (score > alpha) {
-            alpha       = score;
-            best_move   = m;
-            raised_alpha = true;
+            alpha = score;
             // Update PV
             pv.clear();
             pv.push_back(m);
             pv.insert(pv.end(), child_pv.begin(), child_pv.end());
         }
+
+        if (alpha >= beta) {
+            break;  // fail-soft beta cutoff
+        }
     }
 
-    (void)raised_alpha;  // used only to clarify intent
-    (void)best_move;     // returned implicitly through pv[0]
-    return alpha;
+    // ── Store in transposition table ──────────────────────────────────────────
+
+    if (tt_) {
+        BoundType bound;
+        if (best_score >= beta)       bound = BOUND_LOWER;
+        else if (best_score <= orig_alpha) bound = BOUND_UPPER;
+        else                          bound = BOUND_EXACT;
+
+        int stored = adjust_to_tt(best_score, ply);
+        tt_->store(key, stored, depth, bound, best_move);
+    }
+
+    return best_score;
 }
 
 // ─── search() — iterative deepening ──────────────────────────────────────────
@@ -224,6 +290,9 @@ SearchResult Searcher::search(Board& board) {
     reset();
     nodes_ = 0;
     start_time_ = std::chrono::steady_clock::now();
+
+    // Advance TT generation for this search
+    if (tt_) tt_->new_search();
 
     int max_depth = limits_.depth.value_or(64);
 

@@ -12,6 +12,69 @@
 
 namespace chess {
 
+// ─── Zobrist hashing keys (D-15) ──────────────────────────────────────────────
+//
+// Generated at compile time with a SplitMix64 PRNG seeded with a fixed value
+// so the keys are deterministic across builds and platforms.
+
+namespace zobrist_detail {
+
+// SplitMix64 — deterministic, portable
+constexpr uint64_t splitmix64(uint64_t& state) {
+    uint64_t z = (state += 0x9e3779b97f4a7c15ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+// 12 piece types (6 piece types × 2 colors), 64 squares each
+constexpr std::size_t NUM_PIECE_KEYS = 12 * 64;
+constexpr std::size_t NUM_CASTLING_KEYS = 16;
+constexpr std::size_t NUM_EP_KEYS = 8;
+
+struct ZobristKeys {
+    std::array<uint64_t, NUM_PIECE_KEYS>   pieces{};
+    std::array<uint64_t, NUM_CASTLING_KEYS> castling{};
+    std::array<uint64_t, NUM_EP_KEYS>      ep{};
+    uint64_t                               side = 0;
+
+    constexpr ZobristKeys() {
+        uint64_t state = 0x1234567890abcdefULL;
+        for (auto& k : pieces)   k = splitmix64(state);
+        for (auto& k : castling) k = splitmix64(state);
+        for (auto& k : ep)      k = splitmix64(state);
+        side = splitmix64(state);
+    }
+};
+
+constexpr ZobristKeys ZK{};
+
+// Map (color, pieceType) to a flat index [0..11]
+constexpr std::size_t piece_index(Color c, PieceType pt) noexcept {
+    return static_cast<std::size_t>(c) * 6 +
+           (static_cast<std::size_t>(pt) - 1);
+}
+
+} // namespace zobrist_detail
+
+// ─── Zobrist key computation ─────────────────────────────────────────────────
+
+void Board::compute_zobrist() noexcept {
+    zobrist_key_ = 0;
+    for (Square s = 0; s < 64; ++s) {
+        const Piece& p = squares_[static_cast<std::size_t>(s)];
+        if (!p.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::ZK.pieces[
+                zobrist_detail::piece_index(p.color, p.type) * 64 + s];
+        }
+    }
+    if (side_to_move_ == Color::Black)
+        zobrist_key_ ^= zobrist_detail::ZK.side;
+    zobrist_key_ ^= zobrist_detail::ZK.castling[castling_rights_];
+    if (ep_square_ != NO_SQ)
+        zobrist_key_ ^= zobrist_detail::ZK.ep[file_of(ep_square_)];
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // Map a FEN piece character to a Piece.
@@ -171,6 +234,9 @@ void Board::set_fen(const std::string& fen) {
     }
     if (fullmove_number_ < 1)
         throw std::invalid_argument("FEN: fullmove number must be >= 1");
+
+    // Compute Zobrist key for the new position
+    compute_zobrist();
 }
 
 // ─── fen ─────────────────────────────────────────────────────────────────────
@@ -275,6 +341,7 @@ UndoInfo Board::make_move(const Move& m) {
     undo.castling_rights = castling_rights_;
     undo.halfmove_clock  = halfmove_clock_;
     undo.fullmove_number = fullmove_number_;
+    undo.zobrist_key     = zobrist_key_;
 
     const Piece moving = squares_[static_cast<std::size_t>(m.from)];
 
@@ -338,6 +405,9 @@ UndoInfo Board::make_move(const Move& m) {
     // ── Flip side to move ─────────────────────────────────────────────────────
     side_to_move_ = opponent(side_to_move_);
 
+    // Recompute Zobrist key (simple and correct; can optimize to incremental later)
+    compute_zobrist();
+
     return undo;
 }
 
@@ -352,6 +422,7 @@ void Board::unmake_move(const Move& m, const UndoInfo& undo) {
     castling_rights_ = undo.castling_rights;
     halfmove_clock_  = undo.halfmove_clock;
     fullmove_number_ = undo.fullmove_number;
+    zobrist_key_     = undo.zobrist_key;
 
     const Piece moving = squares_[static_cast<std::size_t>(m.to)];  // the piece that moved (before promotion swap)
 
