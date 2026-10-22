@@ -54,6 +54,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_library(chess_core STATIC
     src/board.cpp
     src/movegen.cpp
+    src/evaluation.cpp
+    src/search.cpp
 )
 
 target_include_directories(chess_core PUBLIC
@@ -117,6 +119,21 @@ target_include_directories(test_perft PRIVATE
 target_link_libraries(test_perft PRIVATE chess_core)
 
 add_test(NAME PerftTests COMMAND test_perft)
+
+# Phase 3 unit tests: search + evaluation
+add_executable(test_search
+    tests/unit/test_main.cpp
+    tests/unit/test_search.cpp
+)
+
+target_include_directories(test_search PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/tests/unit
+)
+
+target_link_libraries(test_search PRIVATE chess_core)
+
+add_test(NAME SearchTests COMMAND test_search)
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)
