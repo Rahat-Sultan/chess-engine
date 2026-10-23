@@ -254,6 +254,28 @@ void Board::set_fen(const std::string& fen) {
         }
     }
 
+    // Sanitize castling rights: verify king and matching rook are on home squares
+    if ((castling_rights_ & CR_WK) &&
+        (squares_[E1] != make_piece(Color::White, PieceType::King) ||
+         squares_[H1] != make_piece(Color::White, PieceType::Rook))) {
+        castling_rights_ &= static_cast<uint8_t>(~CR_WK);
+    }
+    if ((castling_rights_ & CR_WQ) &&
+        (squares_[E1] != make_piece(Color::White, PieceType::King) ||
+         squares_[A1] != make_piece(Color::White, PieceType::Rook))) {
+        castling_rights_ &= static_cast<uint8_t>(~CR_WQ);
+    }
+    if ((castling_rights_ & CR_BK) &&
+        (squares_[E8] != make_piece(Color::Black, PieceType::King) ||
+         squares_[H8] != make_piece(Color::Black, PieceType::Rook))) {
+        castling_rights_ &= static_cast<uint8_t>(~CR_BK);
+    }
+    if ((castling_rights_ & CR_BQ) &&
+        (squares_[E8] != make_piece(Color::Black, PieceType::King) ||
+         squares_[A8] != make_piece(Color::Black, PieceType::Rook))) {
+        castling_rights_ &= static_cast<uint8_t>(~CR_BQ);
+    }
+
     // Compute Zobrist key for the new position
     compute_zobrist();
 }

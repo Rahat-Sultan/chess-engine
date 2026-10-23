@@ -484,3 +484,125 @@ TEST(Board, InequalityAfterMove) {
 
     EXPECT_FALSE(b1 == b2);
 }
+
+// ─── Castling sanitization & round-trip tests ─────────────────────────────────
+
+TEST(Board, SanitizeCastlingRightsMalformedFEN) {
+    // Old middlegame benchmark FEN: Black king on g8, black rook on a8 and f8, but FEN specifies KQkq.
+    const char* malformed_fen =
+        "r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R w KQkq - 0 1";
+    Board b(malformed_fen);
+
+    // White king is on e1, rooks on a1 and h1 -> WK and WQ valid
+    EXPECT_TRUE(b.can_castle_wk());
+    EXPECT_TRUE(b.can_castle_wq());
+
+    // Black king is on g8 (not e8) and no rook on h8 -> BK and BQ must be sanitized/cleared
+    EXPECT_FALSE(b.can_castle_bk());
+    EXPECT_FALSE(b.can_castle_bq());
+
+    // FEN output reflects sanitized castling rights
+    EXPECT_EQ(b.fen(),
+              std::string("r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R w KQ - 0 1"));
+
+    // Make/unmake round-trip leaves board and Zobrist key unchanged
+    Board before = b;
+    Move m = move_from_uci("e1g1");
+    m.flags |= MF_CASTLING;
+    UndoInfo undo = b.make_move(m);
+    b.unmake_move(m, undo);
+    EXPECT_TRUE(b == before);
+    EXPECT_EQ(b.zobrist_key(), before.zobrist_key());
+}
+
+TEST(Board, CastlingRoundTripAllFourCastles) {
+    // White king-side (e1g1) and queen-side (e1c1)
+    {
+        Board b("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+        Board snap = b;
+        Move m_wk = move_from_uci("e1g1");
+        m_wk.flags |= MF_CASTLING;
+        UndoInfo undo = b.make_move(m_wk);
+        EXPECT_EQ(b.king_square(Color::White), G1);
+        EXPECT_TRUE(b.piece_at(F1) == make_piece(Color::White, PieceType::Rook));
+        EXPECT_TRUE(b.piece_at(H1).is_empty());
+        b.unmake_move(m_wk, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+
+        Move m_wq = move_from_uci("e1c1");
+        m_wq.flags |= MF_CASTLING;
+        undo = b.make_move(m_wq);
+        EXPECT_EQ(b.king_square(Color::White), C1);
+        EXPECT_TRUE(b.piece_at(D1) == make_piece(Color::White, PieceType::Rook));
+        EXPECT_TRUE(b.piece_at(A1).is_empty());
+        b.unmake_move(m_wq, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+    }
+
+    // Black king-side (e8g8) and queen-side (e8c8)
+    {
+        Board b("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1");
+        Board snap = b;
+        Move m_bk = move_from_uci("e8g8");
+        m_bk.flags |= MF_CASTLING;
+        UndoInfo undo = b.make_move(m_bk);
+        EXPECT_EQ(b.king_square(Color::Black), G8);
+        EXPECT_TRUE(b.piece_at(F8) == make_piece(Color::Black, PieceType::Rook));
+        EXPECT_TRUE(b.piece_at(H8).is_empty());
+        b.unmake_move(m_bk, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+
+        Move m_bq = move_from_uci("e8c8");
+        m_bq.flags |= MF_CASTLING;
+        undo = b.make_move(m_bq);
+        EXPECT_EQ(b.king_square(Color::Black), C8);
+        EXPECT_TRUE(b.piece_at(D8) == make_piece(Color::Black, PieceType::Rook));
+        EXPECT_TRUE(b.piece_at(A8).is_empty());
+        b.unmake_move(m_bq, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+    }
+}
+
+TEST(Board, RookCapturedOnCornerRevokesRightsRoundTrip) {
+    // White queen on a4 captures black rook on a8
+    {
+        Board b("r3k2r/8/8/8/Q7/8/8/R3K2R w KQkq - 0 1");
+        Board snap = b;
+        Move m = move_from_uci("a4a8");
+        UndoInfo undo = b.make_move(m);
+
+        // Black queen-side castling revoked; Black king-side preserved
+        EXPECT_FALSE(b.can_castle_bq());
+        EXPECT_TRUE(b.can_castle_bk());
+        EXPECT_TRUE(undo.captured == make_piece(Color::Black, PieceType::Rook));
+
+        b.unmake_move(m, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+        EXPECT_TRUE(b.can_castle_bq());
+        EXPECT_TRUE(b.can_castle_bk());
+    }
+
+    // Black queen on h5 captures white rook on h1
+    {
+        Board b("r3k2r/8/8/7q/8/8/8/R3K2R b KQkq - 0 1");
+        Board snap = b;
+        Move m = move_from_uci("h5h1");
+        UndoInfo undo = b.make_move(m);
+
+        // White king-side castling revoked; White queen-side preserved
+        EXPECT_FALSE(b.can_castle_wk());
+        EXPECT_TRUE(b.can_castle_wq());
+        EXPECT_TRUE(undo.captured == make_piece(Color::White, PieceType::Rook));
+
+        b.unmake_move(m, undo);
+        EXPECT_TRUE(b == snap);
+        EXPECT_EQ(b.zobrist_key(), snap.zobrist_key());
+        EXPECT_TRUE(b.can_castle_wk());
+        EXPECT_TRUE(b.can_castle_wq());
+    }
+}

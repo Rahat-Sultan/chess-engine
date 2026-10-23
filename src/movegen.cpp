@@ -280,8 +280,11 @@ static void gen_castling(const Board& board, Color us, MoveList& list) {
     if (is_in_check(board, us)) return;
 
     if (us == Color::White) {
-        // King-side: e1→g1, need f1 and g1 empty, f1 and g1 not attacked
-        if (board.can_castle_wk()) {
+        if (board.piece_at(E1) != make_piece(Color::White, PieceType::King)) return;
+
+        // King-side: e1→g1, need rook on h1, f1 and g1 empty, f1 and g1 not attacked
+        if (board.can_castle_wk() &&
+            board.piece_at(H1) == make_piece(Color::White, PieceType::Rook)) {
             if (board.piece_at(F1).is_empty() &&
                 board.piece_at(G1).is_empty() &&
                 !is_square_attacked(board, F1, Color::Black) &&
@@ -291,8 +294,9 @@ static void gen_castling(const Board& board, Color us, MoveList& list) {
                 list.push(m);
             }
         }
-        // Queen-side: e1→c1, need d1, c1, b1 empty, d1 and c1 not attacked
-        if (board.can_castle_wq()) {
+        // Queen-side: e1→c1, need rook on a1, d1, c1, b1 empty, d1 and c1 not attacked
+        if (board.can_castle_wq() &&
+            board.piece_at(A1) == make_piece(Color::White, PieceType::Rook)) {
             if (board.piece_at(D1).is_empty() &&
                 board.piece_at(C1).is_empty() &&
                 board.piece_at(B1).is_empty() &&
@@ -304,8 +308,11 @@ static void gen_castling(const Board& board, Color us, MoveList& list) {
             }
         }
     } else {
-        // King-side: e8→g8
-        if (board.can_castle_bk()) {
+        if (board.piece_at(E8) != make_piece(Color::Black, PieceType::King)) return;
+
+        // King-side: e8→g8, need rook on h8, f8 and g8 empty, f8 and g8 not attacked
+        if (board.can_castle_bk() &&
+            board.piece_at(H8) == make_piece(Color::Black, PieceType::Rook)) {
             if (board.piece_at(F8).is_empty() &&
                 board.piece_at(G8).is_empty() &&
                 !is_square_attacked(board, F8, Color::White) &&
@@ -315,8 +322,9 @@ static void gen_castling(const Board& board, Color us, MoveList& list) {
                 list.push(m);
             }
         }
-        // Queen-side: e8→c8
-        if (board.can_castle_bq()) {
+        // Queen-side: e8→c8, need rook on a8, d8, c8, b8 empty, d8 and c8 not attacked
+        if (board.can_castle_bq() &&
+            board.piece_at(A8) == make_piece(Color::Black, PieceType::Rook)) {
             if (board.piece_at(D8).is_empty() &&
                 board.piece_at(C8).is_empty() &&
                 board.piece_at(B8).is_empty() &&

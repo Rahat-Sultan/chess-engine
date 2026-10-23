@@ -317,3 +317,14 @@ TEST(ResolveMove, CastlingResolved) {
     EXPECT_TRUE(m.is_valid());
     EXPECT_TRUE(m.is_castling());
 }
+
+TEST(MoveGen, NoCastlingMovesWhenRightsSanitized) {
+    // Malformed FEN with Black king on g8 and no rook on h8, but claiming KQkq
+    const char* malformed_fen =
+        "r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R b KQkq - 0 1";
+    Board b(malformed_fen);
+
+    MoveList moves = generate_legal_moves(b);
+    EXPECT_FALSE(has_move(moves, "e8g8"));
+    EXPECT_FALSE(has_move(moves, "e8c8"));
+}
