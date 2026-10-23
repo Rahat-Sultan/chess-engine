@@ -49,3 +49,6 @@ networks/*.bin
 *.perf
 *.prof
 gmon.out
+engines/
+bench/matches/
+*.pgn
