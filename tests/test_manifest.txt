@@ -75,7 +75,7 @@
 - Board.CastlingRoundTripAllFourCastles
 - Board.RookCapturedOnCornerRevokesRightsRoundTrip
 
-## build/test_movegen (34 tests)
+## build/test_movegen (35 tests)
 - Check.StartingPositionNotInCheck
 - Check.WhiteKingInCheckByRook
 - Check.BlackKingInCheckByQueen
@@ -110,6 +110,7 @@
 - ResolveMove.CastlingResolved
 - MoveGen.NoCastlingMovesWhenRightsSanitized
 - MoveGen.DifferentialFastVsReferencePerftAndRandomPlayouts
+- MoveGen.DifferentialCapturesVsReference
 
 ## build/test_perft (16 tests)
 - Perft.Start_D1
@@ -214,4 +215,4 @@
 - NNUE.MakUnmakeDoesNotCorruptEval
 - NNUE.HandcraftedAndNNUEAgreeOnSign
 
-# Total: 199 tests across 7 binaries
+# Total: 200 tests across 7 binaries

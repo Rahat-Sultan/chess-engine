@@ -150,12 +150,8 @@ int Searcher::quiescence(Board& board, int alpha, int beta, int ply) {
     // Depth guard — avoid runaway quiescence in rare positions
     if (ply >= 64) return alpha;
 
-    // Generate only captures (and promotions)
-    MoveList all_moves = generate_legal_moves(board);
-    MoveList captures;
-    for (const Move& m : all_moves) {
-        if (m.is_capture() || m.is_promotion()) captures.push(m);
-    }
+    // Generate only captures (and promotions) directly
+    MoveList captures = generate_captures(board);
     order_moves(captures, board);
 
     for (const Move& m : captures) {

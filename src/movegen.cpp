@@ -468,6 +468,167 @@ MoveList generate_legal_moves(Board& board) {
     return legal;
 }
 
+// ─── Direct capture generators (for quiescence) ──────────────────────────────
+
+static void gen_pawn_captures(const Board& board, Color us, MoveList& list) {
+    const int push_dir   = (us == Color::White) ?  8 : -8;
+    const int promo_rank = (us == Color::White) ?  6 :  1;  // rank before promotion
+
+    static constexpr PieceType PROMO_PIECES[4] = {
+        PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight
+    };
+
+    for (Square from = 0; from < 64; ++from) {
+        Piece p = board.piece_at(from);
+        if (p.type != PieceType::Pawn || p.color != us) continue;
+
+        int r = rank_of(from);
+        int f = file_of(from);
+
+        // Single push: promotions only
+        Square to = from + push_dir;
+        if (is_valid_sq(to) && board.piece_at(to).is_empty()) {
+            if (r == promo_rank) {
+                for (PieceType pt : PROMO_PIECES) {
+                    Move m;
+                    m.from = from; m.to = to;
+                    m.flags = MF_PROMOTION;
+                    m.promotion_piece = pt;
+                    list.push(m);
+                }
+            }
+        }
+
+        // Captures (including promotion-captures)
+        int cap_files[2] = { f - 1, f + 1 };
+        for (int cf : cap_files) {
+            if (cf < 0 || cf > 7) continue;
+            Square cap_sq = make_square(cf, r + (push_dir / 8));
+            if (!is_valid_sq(cap_sq)) continue;
+
+            // Normal capture
+            Piece target = board.piece_at(cap_sq);
+            if (!target.is_empty() && target.color != us) {
+                if (r == promo_rank) {
+                    for (PieceType pt : PROMO_PIECES) {
+                        Move m;
+                        m.from = from; m.to = cap_sq;
+                        m.flags = MF_CAPTURE | MF_PROMOTION;
+                        m.promotion_piece = pt;
+                        list.push(m);
+                    }
+                } else {
+                    Move m; m.from = from; m.to = cap_sq;
+                    m.flags = MF_CAPTURE;
+                    list.push(m);
+                }
+            }
+
+            // En-passant capture
+            if (cap_sq == board.ep_square()) {
+                Move m; m.from = from; m.to = cap_sq;
+                m.flags = MF_EN_PASSANT | MF_CAPTURE;
+                list.push(m);
+            }
+        }
+    }
+}
+
+static void gen_knight_captures(const Board& board, Color us, MoveList& list) {
+    for (Square from = 0; from < 64; ++from) {
+        Piece p = board.piece_at(from);
+        if (p.type != PieceType::Knight || p.color != us) continue;
+
+        for (int jump : KNIGHT_JUMPS) {
+            Square to = from + jump;
+            if (!valid_knight_jump(from, to)) continue;
+            Piece target = board.piece_at(to);
+            if (!target.is_empty() && target.color != us) {
+                Move m; m.from = from; m.to = to;
+                m.flags = MF_CAPTURE;
+                list.push(m);
+            }
+        }
+    }
+}
+
+static void gen_sliding_captures(const Board& board, Color us,
+                                 PieceType pt, const int* dirs, int ndirs,
+                                 MoveList& list) {
+    for (Square from = 0; from < 64; ++from) {
+        Piece p = board.piece_at(from);
+        if (p.type != pt || p.color != us) continue;
+
+        for (int d = 0; d < ndirs; ++d) {
+            int dir = dirs[d];
+            Square cur = from + dir;
+            while (is_valid_sq(cur) && valid_slide_step(cur - dir, cur, dir)) {
+                Piece target = board.piece_at(cur);
+                if (!target.is_empty()) {
+                    if (target.color != us) {
+                        Move m; m.from = from; m.to = cur;
+                        m.flags = MF_CAPTURE;
+                        list.push(m);
+                    }
+                    break;
+                }
+                cur += dir;
+            }
+        }
+    }
+}
+
+static void gen_king_captures(const Board& board, Color us, MoveList& list) {
+    Square from = board.king_square(us);
+    if (from == NO_SQ) return;
+
+    for (int step : KING_STEPS) {
+        Square to = from + step;
+        if (!is_valid_sq(to)) continue;
+        if (!valid_slide_step(from, to, step)) continue;
+        Piece target = board.piece_at(to);
+        if (!target.is_empty() && target.color != us) {
+            Move m; m.from = from; m.to = to;
+            m.flags = MF_CAPTURE;
+            list.push(m);
+        }
+    }
+}
+
+MoveList generate_captures(Board& board) {
+    Color us = board.side_to_move();
+    MoveList pseudo;
+
+    gen_pawn_captures   (board, us, pseudo);
+    gen_knight_captures (board, us, pseudo);
+    gen_sliding_captures(board, us, PieceType::Bishop, BISHOP_DIRS, 4, pseudo);
+    gen_sliding_captures(board, us, PieceType::Rook,   ROOK_DIRS,   4, pseudo);
+    gen_sliding_captures(board, us, PieceType::Queen,  QUEEN_DIRS,  8, pseudo);
+    gen_king_captures   (board, us, pseudo);
+
+    Square ksq = board.king_square(us);
+    bool in_check = !is_valid_sq(ksq) || is_in_check(board, us);
+    uint64_t pinned = in_check ? 0 : compute_pinned(board, ksq, us);
+
+    MoveList legal;
+    for (const Move& m : pseudo) {
+        bool requires_test = in_check ||
+                             (m.from == ksq) ||
+                             m.is_en_passant() ||
+                             ((pinned & (1ULL << static_cast<unsigned>(m.from))) != 0);
+
+        if (!requires_test) {
+            legal.push(m);
+        } else {
+            UndoInfo undo = board.make_move(m);
+            bool check_after = is_in_check(board, us);
+            board.unmake_move(m, undo);
+            if (!check_after) legal.push(m);
+        }
+    }
+    return legal;
+}
+
 // ─── resolve_move ─────────────────────────────────────────────────────────────
 
 Move resolve_move(Board& board, Move partial) {

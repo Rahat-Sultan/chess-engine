@@ -84,6 +84,14 @@ MoveList generate_legal_moves(Board& board);
  */
 MoveList generate_legal_moves_reference(Board& board);
 
+/**
+ * Generate all legal captures (including en passant and capture-promotions)
+ * and all promotions for the side to move.
+ * Emits moves in the exact same relative order as generate_legal_moves()
+ * filtered by (m.is_capture() || m.is_promotion()).
+ */
+MoveList generate_captures(Board& board);
+
 // ─── UCI move resolution ──────────────────────────────────────────────────────
 
 /**

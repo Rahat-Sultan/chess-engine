@@ -20,6 +20,7 @@
 
 #include <string>
 #include <algorithm>
+#include <fstream>
 #include <random>
 
 using namespace chess;
@@ -415,3 +416,100 @@ TEST(MoveGen, DifferentialFastVsReferencePerftAndRandomPlayouts) {
 
     EXPECT_TRUE(tested_positions >= 20000);
 }
+
+TEST(MoveGen, DifferentialCapturesVsReference) {
+    const std::vector<std::string> seed_fens = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+        "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+        "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+        "8/8/8/8/8/8/4k3/R3K2R w - - 0 1",
+        "8/8/8/8/8/8/4K3/r3k2r b - - 0 1",
+        "r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1",
+        "8/8/8/8/8/8/8/4K2k w - - 0 1",
+        "k7/8/8/8/2n5/8/8/K2B1N1r w - - 0 1"
+    };
+
+    auto assert_captures_equal = [](Board& b) {
+        MoveList fast_caps = generate_captures(b);
+        MoveList ref_all   = generate_legal_moves_reference(b);
+        MoveList ref_caps;
+        for (const Move& m : ref_all) {
+            if (m.is_capture() || m.is_promotion()) {
+                ref_caps.push(m);
+            }
+        }
+
+        EXPECT_EQ(fast_caps.size(), ref_caps.size());
+        for (std::size_t i = 0; i < fast_caps.size(); ++i) {
+            EXPECT_EQ(fast_caps[i].from, ref_caps[i].from);
+            EXPECT_EQ(fast_caps[i].to, ref_caps[i].to);
+            EXPECT_EQ(fast_caps[i].flags, ref_caps[i].flags);
+            EXPECT_EQ(static_cast<int>(fast_caps[i].promotion_piece),
+                      static_cast<int>(ref_caps[i].promotion_piece));
+        }
+    };
+
+    // 1. All perft suite positions
+    for (const auto& fen : seed_fens) {
+        Board b(fen);
+        assert_captures_equal(b);
+    }
+
+    // 2. All 504 positions in bench/qsearch_in_check_positions.txt
+    std::ifstream check_file("bench/qsearch_in_check_positions.txt");
+    if (!check_file.is_open()) {
+        check_file.open("../bench/qsearch_in_check_positions.txt");
+    }
+    if (check_file.is_open()) {
+        std::string line;
+        int check_count = 0;
+        while (std::getline(check_file, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            auto bar = line.find('|');
+            std::string fen = (bar != std::string::npos) ? line.substr(0, bar) : line;
+            while (!fen.empty() && (fen.back() == ' ' || fen.back() == '\t')) fen.pop_back();
+            Board b(fen);
+            assert_captures_equal(b);
+            ++check_count;
+        }
+        EXPECT_TRUE(check_count >= 500);
+    } else {
+        std::cerr << "  FAIL: could not open qsearch_in_check_positions.txt\n";
+        EXPECT_TRUE(false);
+    }
+
+    // 3. At least 25,000 random-playout positions across several seeds
+    std::size_t tested_positions = 0;
+    const std::vector<uint64_t> seeds = { 101ULL, 202ULL, 303ULL, 404ULL };
+    std::size_t fen_idx = 0;
+
+    for (uint64_t seed : seeds) {
+        std::mt19937_64 rng(seed);
+
+        while (tested_positions < 25000) {
+            Board b(seed_fens[fen_idx % seed_fens.size()]);
+            ++fen_idx;
+
+            for (int ply = 0; ply < 120; ++ply) {
+                assert_captures_equal(b);
+
+                ++tested_positions;
+                if (tested_positions >= 25000) break;
+
+                MoveList legal = generate_legal_moves(b);
+                if (legal.empty() || b.halfmove_clock() >= 100) break;
+
+                std::uniform_int_distribution<std::size_t> dist(0, legal.size() - 1);
+                b.make_move(legal[dist(rng)]);
+            }
+        }
+    }
+
+    EXPECT_TRUE(tested_positions >= 25000);
+}
+
