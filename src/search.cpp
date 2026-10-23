@@ -77,7 +77,7 @@ int Searcher::elapsed_ms() const noexcept {
 bool Searcher::should_stop() const noexcept {
     if (stop_flag_.load(std::memory_order_relaxed)) return true;
     if (limits_.nodes.has_value() && nodes_ >= *limits_.nodes) return true;
-    if (limits_.movetime_ms.has_value() && (nodes_ & 1023) == 0 && elapsed_ms() >= *limits_.movetime_ms) return true;
+    if (limits_.movetime_ms.has_value() && (nodes_ & 255) == 0 && elapsed_ms() >= *limits_.movetime_ms) return true;
     return false;
 }
 
