@@ -1,0 +1,36 @@
+position: startpos
+nodes: 166963
+score: cp 90
+bestmove: b1c3
+pv: b1c3 b8c6 d2d4 d7d5 g1f3 g8f6
+
+position: kiwipete
+nodes: 410012
+score: cp 194
+bestmove: e2a6
+pv: e2a6 e6d5 c3d5 b6d5 a6b7 h3g2
+
+position: endgame
+nodes: 19545
+score: cp 146
+bestmove: b4f4
+pv: b4f4 h4g3 f4f7 h5c5 f7g7 g3h4
+
+position: tactical
+nodes: 934285
+score: cp 1023
+bestmove: f3g5
+pv: f3g5 g8h6 b1c3 d7d6 d1f3 h6g4
+
+position: middlegame
+nodes: 1466178
+score: cp -167
+bestmove: e1g1
+pv: e1g1 c6a5 b3b4 a5c6 b4b3
+
+position: forks
+nodes: 196479
+score: cp 817
+bestmove: e4e5
+pv: e4e5 f6d5 c3e4 f7f5 e5f6
+
