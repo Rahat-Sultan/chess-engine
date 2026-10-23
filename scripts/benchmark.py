@@ -68,7 +68,7 @@ BENCHMARK_POSITIONS = [
     },
     {
         "name": "middlegame",
-        "fen": "r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R w KQkq - 0 1",
+        "fen": "r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R w KQ - 0 1",
         "desc": "Complex middlegame position",
     },
     {
