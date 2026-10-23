@@ -325,3 +325,59 @@ TEST(TT, ZobristKeySideToMoveMatters) {
     Board bb(fen_b);
     EXPECT_NE(bw.zobrist_key(), bb.zobrist_key());
 }
+
+TEST(TT, IncrementalZobristRandomWalkRoundTrip) {
+    const char* test_positions[] = {
+        STARTING_FEN,
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", // Kiwipete
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",                             // Position 3
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",       // Position 4
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",             // Position 5
+        "rnbqkbnr/pp1ppppp/8/2pP4/8/8/PPP1PPPP/RNBQKBNR w KQkq c6 0 3",           // En passant active
+    };
+
+    uint64_t rng = 0xdeadbeefcafe1234ULL;
+    auto next_rand = [&rng]() -> uint64_t {
+        rng ^= rng >> 12;
+        rng ^= rng << 25;
+        rng ^= rng >> 27;
+        return rng * 0x2545F4914F6CDD1DULL;
+    };
+
+    for (const char* fen : test_positions) {
+        Board b(fen);
+        uint64_t start_key = b.zobrist_key();
+
+        struct PlayedMove {
+            Move m;
+            UndoInfo undo;
+        };
+        std::vector<PlayedMove> history;
+
+        for (int step = 0; step < 100; ++step) {
+            MoveList moves = generate_legal_moves(b);
+            if (moves.empty()) break;
+
+            std::size_t idx = static_cast<std::size_t>(next_rand() % moves.size());
+            Move m = moves[idx];
+
+            UndoInfo undo = b.make_move(m);
+            history.push_back({m, undo});
+
+            Board copy_b(b.fen());
+            EXPECT_EQ(b.zobrist_key(), copy_b.zobrist_key());
+        }
+
+        while (!history.empty()) {
+            PlayedMove pm = history.back();
+            history.pop_back();
+
+            b.unmake_move(pm.m, pm.undo);
+
+            Board copy_b(b.fen());
+            EXPECT_EQ(b.zobrist_key(), copy_b.zobrist_key());
+        }
+
+        EXPECT_EQ(b.zobrist_key(), start_key);
+    }
+}

@@ -6,6 +6,7 @@
 
 #include "chess/board.hpp"
 
+#include <cassert>
 #include <sstream>
 #include <stdexcept>
 #include <cctype>
@@ -53,6 +54,12 @@ constexpr ZobristKeys ZK{};
 constexpr std::size_t piece_index(Color c, PieceType pt) noexcept {
     return static_cast<std::size_t>(c) * 6 +
            (static_cast<std::size_t>(pt) - 1);
+}
+
+inline uint64_t zobrist_piece_key(Color c, PieceType pt, Square s) noexcept {
+    assert(pt != PieceType::None);
+    assert(s >= 0 && s < 64);
+    return ZK.pieces[piece_index(c, pt) * 64 + static_cast<std::size_t>(s)];
 }
 
 } // namespace zobrist_detail
@@ -361,18 +368,46 @@ UndoInfo Board::make_move(const Move& m) {
     // ── Update castling rights ────────────────────────────────────────────────
     revoke_castling(m.from, m.to);
 
-    // ── Apply the move ────────────────────────────────────────────────────────
+    // ── Apply the move & update Zobrist key incrementally ─────────────────────
 
+    // 1. Remove old en-passant file if one was active
+    if (undo.ep_square != NO_SQ) {
+        zobrist_key_ ^= zobrist_detail::ZK.ep[static_cast<std::size_t>(file_of(undo.ep_square))];
+    }
+
+    // 2. Update castling rights key if changed
+    if (castling_rights_ != undo.castling_rights) {
+        zobrist_key_ ^= zobrist_detail::ZK.castling[undo.castling_rights];
+        zobrist_key_ ^= zobrist_detail::ZK.castling[castling_rights_];
+    }
+
+    // 3. Piece movements and captures
     if (m.is_castling()) {
         // Move king
+        if (!moving.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.from);
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.to);
+        }
         remove_piece(m.from);
         place_piece(m.to, moving);
 
-        // Move rook
-        if (m.to == G1) { remove_piece(H1); place_piece(F1, make_piece(Color::White, PieceType::Rook)); }
-        else if (m.to == C1) { remove_piece(A1); place_piece(D1, make_piece(Color::White, PieceType::Rook)); }
-        else if (m.to == G8) { remove_piece(H8); place_piece(F8, make_piece(Color::Black, PieceType::Rook)); }
-        else if (m.to == C8) { remove_piece(A8); place_piece(D8, make_piece(Color::Black, PieceType::Rook)); }
+        // Move rook: undo.captured stores the rook piece before move
+        Square rook_from = NO_SQ;
+        Square rook_to   = NO_SQ;
+        if (m.to == G1)      { rook_from = H1; rook_to = F1; }
+        else if (m.to == C1) { rook_from = A1; rook_to = D1; }
+        else if (m.to == G8) { rook_from = H8; rook_to = F8; }
+        else if (m.to == C8) { rook_from = A8; rook_to = D8; }
+
+        if (rook_from != NO_SQ) {
+            undo.captured = squares_[static_cast<std::size_t>(rook_from)];
+            if (!undo.captured.is_empty()) {
+                remove_piece(rook_from);
+                place_piece(rook_to, undo.captured);
+                zobrist_key_ ^= zobrist_detail::zobrist_piece_key(undo.captured.color, undo.captured.type, rook_from);
+                zobrist_key_ ^= zobrist_detail::zobrist_piece_key(undo.captured.color, undo.captured.type, rook_to);
+            }
+        }
 
     } else if (m.is_en_passant()) {
         // Remove the captured pawn (not on m.to but one rank back)
@@ -380,19 +415,45 @@ UndoInfo Board::make_move(const Move& m) {
                                                              : rank_of(m.to) + 1;
         Square captured_sq = make_square(file_of(m.to), captured_rank);
         undo.captured = squares_[static_cast<std::size_t>(captured_sq)];  // overwrite with actual captured piece
+        if (!undo.captured.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(undo.captured.color, undo.captured.type, captured_sq);
+        }
         remove_piece(captured_sq);
+
+        if (!moving.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.from);
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.to);
+        }
         remove_piece(m.from);
         place_piece(m.to, moving);
 
     } else if (m.is_promotion()) {
+        if (!moving.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.from);
+        }
         remove_piece(m.from);
+
         // Remove any piece on the destination (capture-promotion)
+        if (!undo.captured.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(undo.captured.color, undo.captured.type, m.to);
+        }
         remove_piece(m.to);
-        place_piece(m.to, make_piece(side_to_move_, m.promotion_piece));
+
+        Piece promo = make_piece(side_to_move_, m.promotion_piece);
+        zobrist_key_ ^= zobrist_detail::zobrist_piece_key(promo.color, promo.type, m.to);
+        place_piece(m.to, promo);
 
     } else {
         // Normal move (including captures)
+        if (!moving.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.from);
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(moving.color, moving.type, m.to);
+        }
         remove_piece(m.from);
+
+        if (!undo.captured.is_empty()) {
+            zobrist_key_ ^= zobrist_detail::zobrist_piece_key(undo.captured.color, undo.captured.type, m.to);
+        }
         place_piece(m.to, moving);
     }
 
@@ -400,13 +461,18 @@ UndoInfo Board::make_move(const Move& m) {
     if (m.is_double_push()) {
         int ep_rank = (side_to_move_ == Color::White) ? 2 : 5;
         ep_square_ = make_square(file_of(m.from), ep_rank);
+        zobrist_key_ ^= zobrist_detail::ZK.ep[static_cast<std::size_t>(file_of(ep_square_))];
     }
 
-    // ── Flip side to move ─────────────────────────────────────────────────────
+    // ── Toggle side to move ───────────────────────────────────────────────────
+    zobrist_key_ ^= zobrist_detail::ZK.side;
     side_to_move_ = opponent(side_to_move_);
 
-    // Recompute Zobrist key (simple and correct; can optimize to incremental later)
+#ifndef NDEBUG
+    uint64_t incremental_key = zobrist_key_;
     compute_zobrist();
+    assert(incremental_key == zobrist_key_ && "Incremental Zobrist mismatch in make_move!");
+#endif
 
     return undo;
 }
@@ -432,10 +498,17 @@ void Board::unmake_move(const Move& m, const UndoInfo& undo) {
         remove_piece(m.to);
 
         // Restore rook
-        if (m.to == G1) { place_piece(H1, make_piece(Color::White, PieceType::Rook)); remove_piece(F1); }
-        else if (m.to == C1) { place_piece(A1, make_piece(Color::White, PieceType::Rook)); remove_piece(D1); }
-        else if (m.to == G8) { place_piece(H8, make_piece(Color::Black, PieceType::Rook)); remove_piece(F8); }
-        else if (m.to == C8) { place_piece(A8, make_piece(Color::Black, PieceType::Rook)); remove_piece(D8); }
+        Square rook_from = NO_SQ;
+        Square rook_to   = NO_SQ;
+        if (m.to == G1)      { rook_from = H1; rook_to = F1; }
+        else if (m.to == C1) { rook_from = A1; rook_to = D1; }
+        else if (m.to == G8) { rook_from = H8; rook_to = F8; }
+        else if (m.to == C8) { rook_from = A8; rook_to = D8; }
+
+        if (rook_from != NO_SQ && !undo.captured.is_empty()) {
+            place_piece(rook_from, undo.captured);
+            remove_piece(rook_to);
+        }
 
     } else if (m.is_en_passant()) {
         place_piece(m.from, moving);
@@ -457,6 +530,12 @@ void Board::unmake_move(const Move& m, const UndoInfo& undo) {
         place_piece(m.from, moving);
         place_piece(m.to, undo.captured);
     }
+
+#ifndef NDEBUG
+    uint64_t restored_key = zobrist_key_;
+    compute_zobrist();
+    assert(restored_key == zobrist_key_ && "Incremental Zobrist mismatch in unmake_move!");
+#endif
 }
 
 // ─── operator== ──────────────────────────────────────────────────────────────
