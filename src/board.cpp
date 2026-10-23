@@ -137,6 +137,8 @@ void Board::clear() {
     castling_rights_ = CR_NONE;
     halfmove_clock_  = 0;
     fullmove_number_ = 1;
+    king_square_[static_cast<std::size_t>(Color::White)] = NO_SQ;
+    king_square_[static_cast<std::size_t>(Color::Black)] = NO_SQ;
 }
 
 // ─── set_fen ─────────────────────────────────────────────────────────────────
@@ -242,6 +244,16 @@ void Board::set_fen(const std::string& fen) {
     if (fullmove_number_ < 1)
         throw std::invalid_argument("FEN: fullmove number must be >= 1");
 
+    // Cache king squares
+    king_square_[static_cast<std::size_t>(Color::White)] = NO_SQ;
+    king_square_[static_cast<std::size_t>(Color::Black)] = NO_SQ;
+    for (Square s = 0; s < 64; ++s) {
+        const Piece& p = squares_[static_cast<std::size_t>(s)];
+        if (p.type == PieceType::King) {
+            king_square_[static_cast<std::size_t>(p.color)] = s;
+        }
+    }
+
     // Compute Zobrist key for the new position
     compute_zobrist();
 }
@@ -306,12 +318,18 @@ std::string Board::fen() const {
 // ─── king_square ─────────────────────────────────────────────────────────────
 
 Square Board::king_square(Color c) const noexcept {
+#ifndef NDEBUG
+    Square scanned = NO_SQ;
     for (Square s = 0; s < 64; ++s) {
         const Piece& p = squares_[static_cast<std::size_t>(s)];
-        if (p.type == PieceType::King && p.color == c)
-            return s;
+        if (p.type == PieceType::King && p.color == c) {
+            scanned = s;
+            break;
+        }
     }
-    return NO_SQ;
+    assert(king_square_[static_cast<std::size_t>(c)] == scanned && "King square cache mismatch!");
+#endif
+    return king_square_[static_cast<std::size_t>(c)];
 }
 
 // ─── revoke_castling ─────────────────────────────────────────────────────────
@@ -367,6 +385,14 @@ UndoInfo Board::make_move(const Move& m) {
 
     // ── Update castling rights ────────────────────────────────────────────────
     revoke_castling(m.from, m.to);
+
+    // ── Update king square cache ──────────────────────────────────────────────
+    if (moving.type == PieceType::King) {
+        king_square_[static_cast<std::size_t>(moving.color)] = m.to;
+    }
+    if (!undo.captured.is_empty() && undo.captured.type == PieceType::King) {
+        king_square_[static_cast<std::size_t>(undo.captured.color)] = NO_SQ;
+    }
 
     // ── Apply the move & update Zobrist key incrementally ─────────────────────
 
@@ -491,6 +517,14 @@ void Board::unmake_move(const Move& m, const UndoInfo& undo) {
     zobrist_key_     = undo.zobrist_key;
 
     const Piece moving = squares_[static_cast<std::size_t>(m.to)];  // the piece that moved (before promotion swap)
+
+    // ── Restore king square cache ─────────────────────────────────────────────
+    if (m.is_castling() || moving.type == PieceType::King) {
+        king_square_[static_cast<std::size_t>(side_to_move_)] = m.from;
+    }
+    if (!undo.captured.is_empty() && undo.captured.type == PieceType::King) {
+        king_square_[static_cast<std::size_t>(undo.captured.color)] = m.to;
+    }
 
     if (m.is_castling()) {
         // Restore king

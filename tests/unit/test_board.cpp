@@ -128,6 +128,53 @@ TEST(Board, KingSquareStart) {
     EXPECT_EQ(b.king_square(Color::Black), E8);
 }
 
+TEST(Board, KingSquareCacheMakeUnmakeRoundTrip) {
+    // Kiwipete position has castling rights and many king / piece options
+    Board b("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    EXPECT_EQ(b.king_square(Color::White), E1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+
+    // Castling white kingside: e1g1
+    Move m_castle;
+    m_castle.from = E1;
+    m_castle.to = G1;
+    m_castle.flags = MF_CASTLING;
+    UndoInfo undo1 = b.make_move(m_castle);
+    EXPECT_EQ(b.king_square(Color::White), G1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+
+    // Black castles queenside: e8c8
+    Move m_bcastle;
+    m_bcastle.from = E8;
+    m_bcastle.to = C8;
+    m_bcastle.flags = MF_CASTLING;
+    UndoInfo undo2 = b.make_move(m_bcastle);
+    EXPECT_EQ(b.king_square(Color::White), G1);
+    EXPECT_EQ(b.king_square(Color::Black), C8);
+
+    // Unmake black castle
+    b.unmake_move(m_bcastle, undo2);
+    EXPECT_EQ(b.king_square(Color::White), G1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+
+    // Unmake white castle
+    b.unmake_move(m_castle, undo1);
+    EXPECT_EQ(b.king_square(Color::White), E1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+
+    // Normal king move: e1f1
+    Move m_king;
+    m_king.from = E1;
+    m_king.to = F1;
+    UndoInfo undo3 = b.make_move(m_king);
+    EXPECT_EQ(b.king_square(Color::White), F1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+
+    b.unmake_move(m_king, undo3);
+    EXPECT_EQ(b.king_square(Color::White), E1);
+    EXPECT_EQ(b.king_square(Color::Black), E8);
+}
+
 // ─── FEN round-trips ─────────────────────────────────────────────────────────
 
 TEST(Board, StartFENRoundTrip) {

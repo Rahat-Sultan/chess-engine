@@ -122,6 +122,8 @@ private:
     // 64-square array, index 0 = a1, index 63 = h8
     std::array<Piece, 64> squares_{};
 
+    std::array<Square, 2> king_square_{E1, E8}; // Cached king square for [White=0, Black=1]
+
     Color   side_to_move_    = Color::White;
     Square  ep_square_       = NO_SQ;        // D-9
     uint8_t castling_rights_ = CR_ALL;       // D-8
