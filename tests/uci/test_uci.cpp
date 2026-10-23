@@ -37,6 +37,25 @@ static bool contains(const std::string& haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+static bool is_valid_uci_stream(const std::string& output) {
+    std::istringstream iss(output);
+    std::string line;
+    while (std::getline(iss, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+        if (line.empty()) continue;
+        if (line.rfind("id ", 0) == 0 ||
+            line == "uciok" ||
+            line == "readyok" ||
+            line.rfind("bestmove ", 0) == 0 ||
+            line.rfind("info ", 0) == 0 ||
+            line.rfind("option ", 0) == 0) {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
 TEST(UCI, Handshake) {
     std::istringstream in("uci\n");
     std::ostringstream out;
@@ -268,4 +287,128 @@ TEST(UCI, WindowsCrlfEndings) {
     std::string s = out.str();
     EXPECT_TRUE(contains(s, "uciok\n"));
     EXPECT_TRUE(contains(s, "readyok\n"));
+}
+
+// ─── Search Limit Tests & Overshoot Measurements ─────────────────────────────
+
+TEST(UCI, GoNodes100BoundedOvershoot) {
+    std::istringstream in;
+    std::ostringstream out;
+    UciController uci(in, out);
+
+    uci.process_command("position startpos");
+    uci.process_command("go nodes 100");
+    uci.wait_for_search();
+
+    std::string s = out.str();
+    EXPECT_TRUE(contains(s, "bestmove "));
+    EXPECT_TRUE(is_valid_uci_stream(s));
+
+    auto bm_pos = s.find("bestmove ");
+    EXPECT_TRUE(bm_pos != std::string::npos);
+    if (bm_pos != std::string::npos) {
+        std::string move_token = s.substr(bm_pos + 9, 4);
+        Move m = move_from_uci(move_token);
+        EXPECT_TRUE(m.is_valid());
+        Board b;
+        EXPECT_TRUE(resolve_move(b, m).is_valid());
+    }
+}
+
+TEST(UCI, GoMovetime1ReturnsLegalBestmove) {
+    std::istringstream in;
+    std::ostringstream out;
+    UciController uci(in, out);
+
+    uci.process_command("position startpos");
+    uci.process_command("go movetime 1");
+    uci.wait_for_search();
+
+    std::string s = out.str();
+    EXPECT_TRUE(contains(s, "bestmove "));
+    EXPECT_TRUE(is_valid_uci_stream(s));
+
+    auto bm_pos = s.find("bestmove ");
+    EXPECT_TRUE(bm_pos != std::string::npos);
+    if (bm_pos != std::string::npos) {
+        std::string move_token = s.substr(bm_pos + 9, 4);
+        Move m = move_from_uci(move_token);
+        EXPECT_TRUE(m.is_valid());
+        Board b;
+        EXPECT_TRUE(resolve_move(b, m).is_valid());
+    }
+}
+
+TEST(UCI, GoInfiniteStopWithin100ms) {
+    std::istringstream in;
+    std::ostringstream out;
+    UciController uci(in, out);
+
+    uci.process_command("position startpos");
+    uci.process_command("go infinite");
+
+    EXPECT_TRUE(uci.is_searching());
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    auto t0 = std::chrono::steady_clock::now();
+    uci.process_command("stop");
+    uci.wait_for_search();
+    auto t1 = std::chrono::steady_clock::now();
+
+    auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    EXPECT_TRUE(stop_ms < 100);
+    EXPECT_FALSE(uci.is_searching());
+
+    std::string s = out.str();
+    EXPECT_TRUE(contains(s, "bestmove "));
+    EXPECT_TRUE(is_valid_uci_stream(s));
+}
+
+TEST(UCI, GoDepth1ReturnsLegalBestmove) {
+    std::istringstream in;
+    std::ostringstream out;
+    UciController uci(in, out);
+
+    uci.process_command("position startpos");
+    uci.process_command("go depth 1");
+    uci.wait_for_search();
+
+    std::string s = out.str();
+    EXPECT_TRUE(contains(s, "info depth 1"));
+    EXPECT_TRUE(contains(s, "bestmove "));
+    EXPECT_TRUE(is_valid_uci_stream(s));
+
+    auto bm_pos = s.find("bestmove ");
+    EXPECT_TRUE(bm_pos != std::string::npos);
+    if (bm_pos != std::string::npos) {
+        std::string move_token = s.substr(bm_pos + 9, 4);
+        Move m = move_from_uci(move_token);
+        EXPECT_TRUE(m.is_valid());
+        Board b;
+        EXPECT_TRUE(resolve_move(b, m).is_valid());
+    }
+}
+
+TEST(UCI, GoMovetimeOvershootMeasurements) {
+    for (int target_ms : {100, 1000}) {
+        for (int i = 0; i < 5; ++i) {
+            std::istringstream in;
+            std::ostringstream out;
+            UciController uci(in, out);
+
+            uci.process_command("position startpos");
+            auto t0 = std::chrono::steady_clock::now();
+            uci.process_command("go movetime " + std::to_string(target_ms));
+            uci.wait_for_search();
+            auto t1 = std::chrono::steady_clock::now();
+
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+            EXPECT_TRUE(elapsed >= target_ms);
+            EXPECT_TRUE(elapsed < target_ms + 100);
+
+            std::string s = out.str();
+            EXPECT_TRUE(contains(s, "bestmove "));
+            EXPECT_TRUE(is_valid_uci_stream(s));
+        }
+    }
 }
