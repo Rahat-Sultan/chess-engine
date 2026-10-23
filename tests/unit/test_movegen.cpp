@@ -20,6 +20,7 @@
 
 #include <string>
 #include <algorithm>
+#include <random>
 
 using namespace chess;
 
@@ -327,4 +328,90 @@ TEST(MoveGen, NoCastlingMovesWhenRightsSanitized) {
     MoveList moves = generate_legal_moves(b);
     EXPECT_FALSE(has_move(moves, "e8g8"));
     EXPECT_FALSE(has_move(moves, "e8c8"));
+}
+
+// ─── Differential Test: Fast Legality vs Reference ───────────────────────────
+
+TEST(MoveGen, DifferentialFastVsReferencePerftAndRandomPlayouts) {
+    const std::vector<std::string> seed_fens = {
+        // Standard startpos
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        // Kiwipete (rich pins, castling, en-passant)
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        // Perft Pos 3
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        // Perft Pos 4 (pins and double checks)
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1p1P1/q4N2/Pp1P1PP1/R2QK2R b KQkq - 0 1",
+        // Perft Pos 5 (promotions and discovered checks)
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+        // Tactical benchmark
+        "r1b1k1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+        // Middlegame benchmark
+        "r2q1rk1/ppp2ppp/2n1bn2/1B1p4/3P4/1Q3N2/PP3PPP/RNB1K2R w KQ - 0 1",
+        // Forks benchmark
+        "r3k2r/p1pp1pp1/bn2pnp1/3P4/1p2P3/2N5/PP3PPP/R1BQK1NR w KQkq - 0 1",
+        // Pin along diagonal
+        "k7/8/8/8/3b4/8/4R3/4K3 w - - 0 1",
+        // Pin along rank
+        "k7/8/8/8/8/8/4r3/4K2R w K - 0 1",
+        // Double check position
+        "k7/8/8/8/2n5/8/8/K2B1N1r w - - 0 1"
+    };
+
+    auto assert_moves_equal = [](Board& b) {
+        MoveList fast = generate_legal_moves(b);
+        MoveList ref  = generate_legal_moves_reference(b);
+        EXPECT_EQ(fast.size(), ref.size());
+        for (std::size_t i = 0; i < fast.size(); ++i) {
+            EXPECT_EQ(fast[i].from, ref[i].from);
+            EXPECT_EQ(fast[i].to, ref[i].to);
+            EXPECT_EQ(fast[i].flags, ref[i].flags);
+            EXPECT_EQ(static_cast<int>(fast[i].promotion_piece),
+                      static_cast<int>(ref[i].promotion_piece));
+        }
+    };
+
+    // Test all initial seed positions directly
+    for (const auto& fen : seed_fens) {
+        Board b(fen);
+        assert_moves_equal(b);
+    }
+
+    // Random legal playouts: generate at least 25,000 distinct positions
+    std::size_t tested_positions = 0;
+    const std::vector<uint64_t> seeds = { 42ULL, 1337ULL, 987654ULL, 123456789ULL };
+    std::size_t fen_idx = 0;
+
+    for (uint64_t seed : seeds) {
+        std::mt19937_64 rng(seed);
+
+        while (tested_positions < 25000) {
+            Board b(seed_fens[fen_idx % seed_fens.size()]);
+            ++fen_idx;
+
+            for (int ply = 0; ply < 120; ++ply) {
+                MoveList legal = generate_legal_moves(b);
+                MoveList ref   = generate_legal_moves_reference(b);
+
+                EXPECT_EQ(legal.size(), ref.size());
+                for (std::size_t i = 0; i < legal.size(); ++i) {
+                    EXPECT_EQ(legal[i].from, ref[i].from);
+                    EXPECT_EQ(legal[i].to, ref[i].to);
+                    EXPECT_EQ(legal[i].flags, ref[i].flags);
+                    EXPECT_EQ(static_cast<int>(legal[i].promotion_piece),
+                              static_cast<int>(ref[i].promotion_piece));
+                }
+
+                ++tested_positions;
+                if (tested_positions >= 25000) break;
+
+                if (legal.empty() || b.halfmove_clock() >= 100) break;
+
+                std::uniform_int_distribution<std::size_t> dist(0, legal.size() - 1);
+                b.make_move(legal[dist(rng)]);
+            }
+        }
+    }
+
+    EXPECT_TRUE(tested_positions >= 20000);
 }

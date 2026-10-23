@@ -78,6 +78,12 @@ bool is_in_check(const Board& board, Color c) noexcept;
  */
 MoveList generate_legal_moves(Board& board);
 
+/**
+ * Reference implementation of legal move generation (used by tests for differential testing).
+ * Uses naive make_move / is_in_check / unmake_move for every candidate move.
+ */
+MoveList generate_legal_moves_reference(Board& board);
+
 // ─── UCI move resolution ──────────────────────────────────────────────────────
 
 /**

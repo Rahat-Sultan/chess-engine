@@ -338,13 +338,78 @@ static void gen_castling(const Board& board, Color us, MoveList& list) {
     }
 }
 
-// ─── generate_legal_moves ─────────────────────────────────────────────────────
+// ─── compute_pinned ───────────────────────────────────────────────────────────
+//
+// Identifies all pieces of color `us` that are pinned to the king at `ksq` by
+// an enemy sliding piece (Bishop, Rook, Queen).
+// Returns a 64-bit bitmask where bit `s` is set if the piece on square `s` is pinned.
 
-MoveList generate_legal_moves(Board& board) {
+static uint64_t compute_pinned(const Board& board, Square ksq, Color us) noexcept {
+    if (!is_valid_sq(ksq)) return 0;
+    uint64_t pinned = 0;
+
+    // Diagonal pinners: enemy Bishop or Queen
+    for (int dir : BISHOP_DIRS) {
+        Square cur = ksq + dir;
+        Square candidate = NO_SQ;
+        while (is_valid_sq(cur) && valid_slide_step(cur - dir, cur, dir)) {
+            Piece p = board.piece_at(cur);
+            if (!p.is_empty()) {
+                if (p.color == us) {
+                    if (candidate == NO_SQ) {
+                        candidate = cur; // first friendly piece along this ray
+                    } else {
+                        break; // second friendly piece blocks any pin
+                    }
+                } else {
+                    // Enemy piece
+                    if (candidate != NO_SQ) {
+                        if (p.type == PieceType::Bishop || p.type == PieceType::Queen) {
+                            pinned |= (1ULL << static_cast<unsigned>(candidate));
+                        }
+                    }
+                    break; // blocked by enemy piece (whether pinner or not)
+                }
+            }
+            cur += dir;
+        }
+    }
+
+    // Straight pinners: enemy Rook or Queen
+    for (int dir : ROOK_DIRS) {
+        Square cur = ksq + dir;
+        Square candidate = NO_SQ;
+        while (is_valid_sq(cur) && valid_slide_step(cur - dir, cur, dir)) {
+            Piece p = board.piece_at(cur);
+            if (!p.is_empty()) {
+                if (p.color == us) {
+                    if (candidate == NO_SQ) {
+                        candidate = cur;
+                    } else {
+                        break;
+                    }
+                } else {
+                    if (candidate != NO_SQ) {
+                        if (p.type == PieceType::Rook || p.type == PieceType::Queen) {
+                            pinned |= (1ULL << static_cast<unsigned>(candidate));
+                        }
+                    }
+                    break;
+                }
+            }
+            cur += dir;
+        }
+    }
+
+    return pinned;
+}
+
+// ─── generate_legal_moves_reference ──────────────────────────────────────────
+
+MoveList generate_legal_moves_reference(Board& board) {
     Color us = board.side_to_move();
     MoveList pseudo;
 
-    // Generate all pseudo-legal candidates
     gen_pawns   (board, us, pseudo);
     gen_knights (board, us, pseudo);
     gen_sliding (board, us, PieceType::Bishop, BISHOP_DIRS, 4, pseudo);
@@ -353,13 +418,52 @@ MoveList generate_legal_moves(Board& board) {
     gen_king    (board, us, pseudo);
     gen_castling(board, us, pseudo);
 
-    // Filter: keep only moves that don't leave our king in check
     MoveList legal;
     for (const Move& m : pseudo) {
         UndoInfo undo = board.make_move(m);
         bool in_check = is_in_check(board, us);
         board.unmake_move(m, undo);
         if (!in_check) legal.push(m);
+    }
+    return legal;
+}
+
+// ─── generate_legal_moves ─────────────────────────────────────────────────────
+
+MoveList generate_legal_moves(Board& board) {
+    Color us = board.side_to_move();
+    MoveList pseudo;
+
+    // Generate all pseudo-legal candidates (identical order to reference)
+    gen_pawns   (board, us, pseudo);
+    gen_knights (board, us, pseudo);
+    gen_sliding (board, us, PieceType::Bishop, BISHOP_DIRS, 4, pseudo);
+    gen_sliding (board, us, PieceType::Rook,   ROOK_DIRS,   4, pseudo);
+    gen_sliding (board, us, PieceType::Queen,  QUEEN_DIRS,  8, pseudo);
+    gen_king    (board, us, pseudo);
+    gen_castling(board, us, pseudo);
+
+    Square ksq = board.king_square(us);
+    bool in_check = !is_valid_sq(ksq) || is_in_check(board, us);
+    uint64_t pinned = in_check ? 0 : compute_pinned(board, ksq, us);
+
+    MoveList legal;
+    for (const Move& m : pseudo) {
+        // Safe move fast path: when not in check, moves by unpinned non-king pieces
+        // (excluding en-passant) cannot leave or expose the king to check.
+        bool requires_test = in_check ||
+                             (m.from == ksq) ||
+                             m.is_en_passant() ||
+                             ((pinned & (1ULL << static_cast<unsigned>(m.from))) != 0);
+
+        if (!requires_test) {
+            legal.push(m);
+        } else {
+            UndoInfo undo = board.make_move(m);
+            bool check_after = is_in_check(board, us);
+            board.unmake_move(m, undo);
+            if (!check_after) legal.push(m);
+        }
     }
     return legal;
 }
