@@ -113,6 +113,42 @@ def test_health_succeeds_even_when_api_key_set(client: TestClient):
         del os.environ["API_KEY"]
 
 
+def test_fen_validation_rejects_hard_errors(client: TestClient):
+    invalid_cases = [
+        ("8/8/8/8/8/8/8/8 w - - 0 1", "Empty board"),
+        ("8/8/8/8/8/8/8/4k3 w - - 0 1", "Missing white king"),
+        ("8/8/8/8/8/8/8/4K3 w - - 0 1", "Missing black king"),
+        ("k6K/8/8/8/8/8/8/7K w - - 0 1", "Too many kings"),
+        ("4k3/8/8/8/8/8/8/P3K3 w - - 0 1", "Pawns on first or last rank"),
+        ("4k3/8/8/8/8/8/4R3/4K3 w - - 0 1", "Opposite side in check"),
+        ("PPPPPPPP/PPPPPP2/4k3/8/8/8/8/4K3 w - - 0 1", "Too many white pawns"),
+    ]
+    for fen, expected_err in invalid_cases:
+        resp = client.post("/analyze", json={"fen": fen, "limits": {"depth": 1}})
+        assert resp.status_code == 400, f"Expected 400 for {fen}, got {resp.status_code}"
+        data = resp.json()
+        detail_str = str(data.get("detail", ""))
+        assert expected_err.lower() in detail_str.lower(), f"Expected '{expected_err}' in detail for {fen}, got: {detail_str}"
+
+
+def test_fen_validation_accepts_valid_and_tolerated_fens(client: TestClient):
+    valid_fens = [
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",  # startpos
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",  # Kiwipete
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",  # bench 1
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",  # bench 2
+        "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",  # bench 3
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",  # bench 4
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",  # bench 5
+        "4k3/8/8/8/8/8/8/4K2Q w - - 0 1",  # promoted queen
+        "4k3/8/8/8/8/8/8/4K3 w - - 0 1",  # "-" castling and en passant
+        "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",  # inconsistent castling rights (tolerated)
+    ]
+    for fen in valid_fens:
+        resp = client.post("/analyze", json={"fen": fen, "limits": {"depth": 1}})
+        assert resp.status_code == 200, f"Expected 200 for {fen}, got {resp.status_code}: {resp.text}"
+
+
 ALL_TESTS = [
     ("API.HealthNoAuthRequired", test_health_no_auth_required),
     ("API.ApiKeyNotSetAllowsAnalyze", test_api_key_not_set_allows_analyze),
@@ -121,6 +157,8 @@ ALL_TESTS = [
     ("API.ApiKeySetRejectsWithNonAsciiKey", test_api_key_set_rejects_with_non_ascii_key),
     ("API.ApiKeySetAcceptsWithValidKey", test_api_key_set_accepts_with_valid_key),
     ("API.HealthSucceedsEvenWhenApiKeySet", test_health_succeeds_even_when_api_key_set),
+    ("API.FenValidationRejectsHardErrors", test_fen_validation_rejects_hard_errors),
+    ("API.FenValidationAcceptsValidAndToleratedFens", test_fen_validation_accepts_valid_and_tolerated_fens),
 ]
 
 

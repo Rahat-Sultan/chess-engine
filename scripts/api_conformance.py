@@ -498,9 +498,9 @@ class ConformanceRunner:
             ("invalid_fen_empty", {"fen": ""}, 400, "Empty FEN"),
             ("invalid_fen_garbage", {"fen": "not-a-valid-fen-string"}, 400, "Garbage text"),
             ("invalid_fen_missing_king", {"fen": "8/8/8/8/8/8/8/8 w - - 0 1"}, 400, "Missing kings"),
-            ("invalid_fen_two_white_kings", {"fen": "k7/8/8/8/8/8/8/K1K5 w - - 0 1"}, 400, "Two white kings"),
-            ("invalid_fen_pawn_rank_1", {"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNP w KQkq - 0 1"}, 400, "Pawn on rank 1"),
-            ("invalid_fen_side_not_to_move_in_check", {"fen": "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR b KQkq - 1 3"}, 400, "Side not to move in check"),
+            ("invalid_fen_two_white_kings", {"fen": "k6K/8/8/8/8/8/8/7K w - - 0 1"}, 400, "Two white kings"),
+            ("invalid_fen_pawn_rank_1", {"fen": "4k3/8/8/8/8/8/8/P3K3 w - - 0 1"}, 400, "Pawn on rank 1"),
+            ("invalid_fen_side_not_to_move_in_check", {"fen": "4k3/8/8/8/8/8/4R3/4K3 w - - 0 1"}, 400, "Side not to move in check"),
             ("invalid_fen_extra_fields", {"fen": f"{STARTPOS_FEN} extra_field"}, 400, "Extra FEN fields"),
             ("invalid_fen_200kb_string", {"fen": "A" * 200_000}, 400, "200KB FEN payload"),
             ("invalid_type_depth_string", {"fen": STARTPOS_FEN, "limits": {"depth": "four"}}, 422, "String depth"),
@@ -518,17 +518,30 @@ class ConformanceRunner:
         for name, payload, expected_status, desc in cases:
             status, _, body, dur = self.request("POST", "/analyze", body=payload)
             ok = status == expected_status
+
+            flag_info = ""
+            if HAS_CHESS and "fen" in payload and isinstance(payload["fen"], str) and payload["fen"]:
+                try:
+                    b = chess.Board(payload["fen"])
+                    flags = [
+                        attr for attr in dir(chess)
+                        if attr.startswith("STATUS_") and (b.status() & getattr(chess, attr))
+                    ]
+                    flag_info = f" [status flags: {', '.join(flags)}]"
+                except Exception as e:
+                    flag_info = f" [syntax parse: {type(e).__name__}]"
+
             self.record(
                 name,
                 "Validation",
                 "major" if expected_status == 400 else "minor",
                 ok,
-                f"POST /analyze ({desc})",
+                f"POST /analyze ({desc}){flag_info}",
                 f"HTTP {expected_status}",
                 f"HTTP {status}",
                 dur,
                 proposed_fix=(
-                    "Call board.is_valid() in app.py to reject semantically illegal FENs"
+                    "Validate FEN status flags in app.py to reject semantically illegal FENs"
                     if "invalid_fen_" in name
                     else "Configure extra='forbid' on Pydantic models"
                     if "extra" in name
@@ -1093,3 +1106,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -215,7 +215,7 @@
 - NNUE.MakUnmakeDoesNotCorruptEval
 - NNUE.HandcraftedAndNNUEAgreeOnSign
 
-## build/test_api (7 tests)
+## build/test_api (9 tests)
 - API.HealthNoAuthRequired
 - API.ApiKeyNotSetAllowsAnalyze
 - API.ApiKeySetRejectsWithoutKey
@@ -223,5 +223,7 @@
 - API.ApiKeySetRejectsWithNonAsciiKey
 - API.ApiKeySetAcceptsWithValidKey
 - API.HealthSucceedsEvenWhenApiKeySet
+- API.FenValidationRejectsHardErrors
+- API.FenValidationAcceptsValidAndToleratedFens
 
-# Total: 207 tests across 8 binaries
+# Total: 209 tests across 8 binaries

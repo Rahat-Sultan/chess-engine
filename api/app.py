@@ -250,7 +250,7 @@ async def analyze(request: AnalyzeRequest):
     """
     # ── Validate FEN ────────────────────────────────────────────────────────
     try:
-        chess.Board(request.fen)
+        board = chess.Board(request.fen)
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -260,6 +260,33 @@ async def analyze(request: AnalyzeRequest):
                 "detail": str(e),
             },
         )
+
+    # Check semantic validity via python-chess status flags
+    status = board.status()
+    hard_error_map = [
+        (chess.STATUS_EMPTY, "Empty board"),
+        (chess.STATUS_NO_WHITE_KING, "Missing white king"),
+        (chess.STATUS_NO_BLACK_KING, "Missing black king"),
+        (chess.STATUS_TOO_MANY_KINGS, "Too many kings"),
+        (chess.STATUS_TOO_MANY_WHITE_PIECES, "Too many white pieces"),
+        (chess.STATUS_TOO_MANY_BLACK_PIECES, "Too many black pieces"),
+        (chess.STATUS_TOO_MANY_WHITE_PAWNS, "Too many white pawns"),
+        (chess.STATUS_TOO_MANY_BLACK_PAWNS, "Too many black pawns"),
+        (chess.STATUS_PAWNS_ON_BACKRANK, "Pawns on first or last rank"),
+        (chess.STATUS_OPPOSITE_CHECK, "Opposite side in check"),
+        (chess.STATUS_TOO_MANY_CHECKERS, "Too many checkers"),
+        (chess.STATUS_IMPOSSIBLE_CHECK, "Impossible check"),
+    ]
+    for flag, msg in hard_error_map:
+        if status & flag:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": "Invalid FEN",
+                    "detail": f"Invalid FEN: {msg}",
+                },
+            )
 
     # ── Determine search parameters ─────────────────────────────────────────
     limits = request.limits
