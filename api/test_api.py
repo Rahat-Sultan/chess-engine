@@ -184,11 +184,9 @@ class TestAnalyzeErrors:
         })
         assert r.status_code == 400
         data = r.json()
+        assert data["success"] is False
+        assert "Invalid FEN" in data["error"]
         assert "detail" in data
-        # The detail is a dict with error info
-        detail = data["detail"]
-        assert detail["success"] is False
-        assert "FEN" in detail["error"]
 
     def test_invalid_fen_missing_fields(self, client):
         # FEN with only 4 fields (missing halfmove and fullmove)

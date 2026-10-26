@@ -26,13 +26,16 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional, Union
 
 import chess
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.engine_manager import EngineManager, EngineBusy, EngineNotReady, EngineError
 
@@ -66,6 +69,8 @@ engine = EngineManager(ENGINE_PATH)
 
 class AnalyzeLimits(BaseModel):
     """Search limits for the analysis request."""
+    model_config = ConfigDict(extra="forbid")
+
     depth: Optional[int] = Field(
         default=None, ge=1, le=MAX_DEPTH,
         description="Maximum search depth in plies (1–20)",
@@ -82,6 +87,8 @@ class AnalyzeLimits(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     """Request body for POST /analyze."""
+    model_config = ConfigDict(extra="forbid")
+
     fen: str = Field(
         ...,
         description="FEN string of the position to analyze (six fields)",
@@ -138,7 +145,10 @@ class ErrorResponse(BaseModel):
     """Error response for failed requests."""
     success: bool = False
     error: str = Field(description="Short error category")
-    detail: Optional[str] = Field(default=None, description="Additional detail")
+    detail: Union[str, list[dict[str, Any]], dict[str, Any], None] = Field(
+        default=None,
+        description="Additional detail string or validation error list",
+    )
 
 
 # ─── FastAPI app ────────────────────────────────────────────────────────────────
@@ -166,6 +176,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "API key required for all endpoints (except /health) when API_KEY is set on the server",
+        }
+    }
+    schema["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -173,6 +206,93 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Exception Handlers (Consistent Error Schema) ───────────────────────────────
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Normalize all HTTPExceptions to top-level {success, error, detail}."""
+    if isinstance(exc.detail, dict):
+        error_title = exc.detail.get("error", "HTTP Error")
+        detail_val = exc.detail.get("detail", "")
+    else:
+        status_titles = {
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden",
+            404: "Not Found",
+            405: "Method Not Allowed",
+            409: "Engine busy",
+            503: "Engine unavailable",
+            504: "Analysis timed out",
+        }
+        error_title = status_titles.get(exc.status_code, "HTTP Error")
+        detail_val = exc.detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": error_title,
+            "detail": detail_val,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Normalize routing and Starlette HTTP exceptions (404, 405)."""
+    if isinstance(exc.detail, dict):
+        error_title = exc.detail.get("error", "HTTP Error")
+        detail_val = exc.detail.get("detail", "")
+    else:
+        status_titles = {
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden",
+            404: "Not Found",
+            405: "Method Not Allowed",
+            409: "Engine busy",
+            503: "Engine unavailable",
+            504: "Analysis timed out",
+        }
+        error_title = status_titles.get(exc.status_code, "HTTP Error")
+        detail_val = exc.detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": error_title,
+            "detail": detail_val,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Normalize Pydantic 422 validation errors to top-level {success, error, detail}."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": "Unprocessable Entity",
+            "detail": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled 500 exceptions."""
+    logger.exception("Unhandled server exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "Internal Server Error",
+            "detail": str(exc),
+        },
+    )
 
 
 # ─── API Key Authentication Middleware ─────────────────────────────────────────
@@ -233,11 +353,15 @@ async def health():
     response_model=AnalyzeResponse,
     summary="Analyze a chess position",
     responses={
-        400: {"model": ErrorResponse, "description": "Invalid FEN"},
+        400: {"model": ErrorResponse, "description": "Invalid FEN or hard chess rule violation"},
         401: {"model": ErrorResponse, "description": "Unauthorized (missing or invalid API key)"},
+        404: {"model": ErrorResponse, "description": "Not Found"},
+        405: {"model": ErrorResponse, "description": "Method Not Allowed"},
         409: {"model": ErrorResponse, "description": "Engine busy"},
+        422: {"model": ErrorResponse, "description": "Validation error or forbidden extra field"},
         503: {"model": ErrorResponse, "description": "Engine unavailable"},
         504: {"model": ErrorResponse, "description": "Analysis timed out"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
 async def analyze(request: AnalyzeRequest):

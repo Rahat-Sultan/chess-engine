@@ -149,6 +149,56 @@ def test_fen_validation_accepts_valid_and_tolerated_fens(client: TestClient):
         assert resp.status_code == 200, f"Expected 200 for {fen}, got {resp.status_code}: {resp.text}"
 
 
+def test_error_schema_consistent_shape(client: TestClient):
+    """Verify that every error code (400, 401, 404, 405, 409, 422, 503, 504, 500) returns top-level shape."""
+    from unittest.mock import patch
+    from api.engine_manager import EngineBusy, EngineNotReady
+
+    def check_shape(resp, expected_code):
+        assert resp.status_code == expected_code, f"Expected {expected_code}, got {resp.status_code}"
+        data = resp.json()
+        assert isinstance(data, dict), f"Body not dict: {data}"
+        assert data.get("success") is False, f"Expected success=False: {data}"
+        assert isinstance(data.get("error"), str) and len(data["error"]) > 0, f"Expected non-empty error string: {data}"
+        assert "detail" in data, f"Missing detail: {data}"
+
+    # 400
+    check_shape(client.post("/analyze", json={"fen": "not_valid"}), 400)
+
+    # 401
+    os.environ["API_KEY"] = "secret42"
+    try:
+        check_shape(client.post("/analyze", json={"fen": TEST_FEN}), 401)
+    finally:
+        del os.environ["API_KEY"]
+
+    # 404
+    check_shape(client.get("/nonexistent_endpoint"), 404)
+
+    # 405
+    check_shape(client.get("/analyze"), 405)
+
+    # 409
+    with patch("api.app.engine.analyze", side_effect=EngineBusy("Busy test")):
+        check_shape(client.post("/analyze", json={"fen": TEST_FEN}), 409)
+
+    # 422
+    check_shape(client.post("/analyze", json={"fen": TEST_FEN, "limits": {"depth": 99}}), 422)
+
+    # 503
+    with patch("api.app.engine.analyze", side_effect=EngineNotReady("Unavailable test")):
+        check_shape(client.post("/analyze", json={"fen": TEST_FEN}), 503)
+
+    # 504
+    with patch("api.app.engine.analyze", return_value={"timed_out": True, "bestmove": "(none)"}):
+        check_shape(client.post("/analyze", json={"fen": TEST_FEN}), 504)
+
+    # 500
+    test_client_no_raise = TestClient(app, raise_server_exceptions=False)
+    with patch("api.app.engine.analyze", side_effect=RuntimeError("Unhandled boom")):
+        check_shape(test_client_no_raise.post("/analyze", json={"fen": TEST_FEN}), 500)
+
+
 ALL_TESTS = [
     ("API.HealthNoAuthRequired", test_health_no_auth_required),
     ("API.ApiKeyNotSetAllowsAnalyze", test_api_key_not_set_allows_analyze),
@@ -159,6 +209,7 @@ ALL_TESTS = [
     ("API.HealthSucceedsEvenWhenApiKeySet", test_health_succeeds_even_when_api_key_set),
     ("API.FenValidationRejectsHardErrors", test_fen_validation_rejects_hard_errors),
     ("API.FenValidationAcceptsValidAndToleratedFens", test_fen_validation_accepts_valid_and_tolerated_fens),
+    ("API.ErrorSchemaConsistentShape", test_error_schema_consistent_shape),
 ]
 
 
