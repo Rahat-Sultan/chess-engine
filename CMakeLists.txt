@@ -205,23 +205,14 @@ if(BUILD_TESTS)
              WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
     # Phase 6 tests: API endpoints and authentication
-    configure_file(
-        ${PROJECT_SOURCE_DIR}/tests/test_api.sh
-        ${CMAKE_BINARY_DIR}/test_api
-        COPYONLY
-    )
-
-    add_custom_target(test_api ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${PROJECT_SOURCE_DIR}/tests/test_api.sh
-            ${CMAKE_BINARY_DIR}/test_api
-        COMMAND chmod +x ${CMAKE_BINARY_DIR}/test_api
-        DEPENDS ${PROJECT_SOURCE_DIR}/tests/test_api.sh
-        COMMENT "Staging test_api runner in build directory"
-    )
-
-    add_test(NAME ApiTests COMMAND ${CMAKE_BINARY_DIR}/test_api
-             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME ApiTests
+                 COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/test_api.py
+                 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+    else()
+        message(STATUS "Python3 interpreter not found; skipping ApiTests")
+    endif()
 endif()
 
 # ─── Install ──────────────────────────────────────────────────────────────────

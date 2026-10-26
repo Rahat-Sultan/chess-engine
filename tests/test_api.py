@@ -16,6 +16,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# If starlette/fastapi dependencies are in project .venv, re-exec under .venv python
+try:
+    import starlette
+except ModuleNotFoundError:
+    venv_py = REPO_ROOT / ".venv" / "bin" / "python"
+    if venv_py.is_file() and sys.executable != str(venv_py):
+        import subprocess
+        sys.exit(subprocess.run([str(venv_py)] + sys.argv).returncode)
+    raise
+
 from starlette.testclient import TestClient
 from api.app import app
 
@@ -64,6 +74,20 @@ def test_api_key_set_rejects_with_wrong_key(client: TestClient):
         del os.environ["API_KEY"]
 
 
+def test_api_key_set_rejects_with_non_ascii_key(client: TestClient):
+    os.environ["API_KEY"] = "super-secret-key-42"
+    try:
+        resp = client.post(
+            "/analyze",
+            headers={"X-API-Key": "clé-secrète-🔑-неверный-ключ".encode("utf-8")},
+            json={"fen": TEST_FEN, "limits": {"depth": 1}},
+        )
+        assert resp.status_code == 401
+        assert resp.json().get("error") == "Unauthorized"
+    finally:
+        del os.environ["API_KEY"]
+
+
 def test_api_key_set_accepts_with_valid_key(client: TestClient):
     os.environ["API_KEY"] = "super-secret-key-42"
     try:
@@ -94,6 +118,7 @@ ALL_TESTS = [
     ("API.ApiKeyNotSetAllowsAnalyze", test_api_key_not_set_allows_analyze),
     ("API.ApiKeySetRejectsWithoutKey", test_api_key_set_rejects_without_key),
     ("API.ApiKeySetRejectsWithWrongKey", test_api_key_set_rejects_with_wrong_key),
+    ("API.ApiKeySetRejectsWithNonAsciiKey", test_api_key_set_rejects_with_non_ascii_key),
     ("API.ApiKeySetAcceptsWithValidKey", test_api_key_set_accepts_with_valid_key),
     ("API.HealthSucceedsEvenWhenApiKeySet", test_health_succeeds_even_when_api_key_set),
 ]
@@ -126,3 +151,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

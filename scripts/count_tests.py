@@ -39,13 +39,22 @@ def parse_manifest(manifest_path: Path):
 
     return binary_counts
 
-def run_test_binary(bin_path: Path):
-    if not bin_path.is_file():
-        return False, 0, f"Binary not found: {bin_path}"
-    
-    res = subprocess.run([str(bin_path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+def run_test_target(bin_name: str, build_dir: Path, repo_root: Path):
+    if bin_name == "test_api":
+        api_py = repo_root / "tests" / "test_api.py"
+        if not api_py.is_file():
+            return False, 0, f"Test file not found: {api_py}"
+        venv_py = repo_root / ".venv" / "bin" / "python"
+        py_cmd = str(venv_py) if venv_py.is_file() else sys.executable
+        res = subprocess.run([py_cmd, str(api_py)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    else:
+        bin_path = build_dir / bin_name
+        if not bin_path.is_file():
+            return False, 0, f"Binary not found: {bin_path}"
+        res = subprocess.run([str(bin_path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
     if res.returncode != 0:
-        return False, 0, f"Binary exited with code {res.returncode}"
+        return False, 0, f"Process exited with code {res.returncode}"
 
     # Match "=== Results: X passed, 0 failed ==="
     match = re.search(r"===\s*Results:\s*(\d+)\s*passed,\s*(\d+)\s*failed\s*===", res.stdout)
@@ -78,8 +87,7 @@ def main():
         expected = data["expected"]
         total_manifest += expected
 
-        bin_path = build_dir / bin_name
-        ok, executed, status_msg = run_test_binary(bin_path)
+        ok, executed, status_msg = run_test_target(bin_name, build_dir, repo_root)
 
         total_executed += executed
         status = "OK"

@@ -139,6 +139,11 @@ class EngineManager:
             if not self.is_ready():
                 raise EngineNotReady("Engine is not running")
 
+            # Reset engine state between searches
+            self._send("ucinewgame")
+            self._send("isready")
+            self._wait_for("readyok")
+
             # Set up the position
             self._send(f"position fen {fen}")
 

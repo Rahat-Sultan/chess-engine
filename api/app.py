@@ -197,7 +197,9 @@ async def api_key_auth_middleware(request: Request, call_next):
             return await call_next(request)
 
         provided_key = request.headers.get("X-API-Key")
-        if not provided_key or not secrets.compare_digest(provided_key, expected_key):
+        if not provided_key or not secrets.compare_digest(
+            provided_key.encode("utf-8"), expected_key.encode("utf-8")
+        ):
             return JSONResponse(
                 status_code=401,
                 content={
