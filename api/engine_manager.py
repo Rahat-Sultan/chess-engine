@@ -52,8 +52,48 @@ class EngineManager:
         self._ready = False
         self._line_queue: queue.Queue[str | None] = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
+        self._restart_times: list[float] = []
 
     # ── Lifecycle ───────────────────────────────────────────────────────────────
+
+    def _ensure_alive_and_ready(self) -> None:
+        """Check if engine is alive; if dead, auto-restart subject to rate limit (<= 3 in 60s)."""
+        if self.is_ready():
+            return
+
+        now = time.monotonic()
+        self._restart_times = [t for t in self._restart_times if now - t <= 60.0]
+        if len(self._restart_times) >= 3:
+            raise EngineNotReady(
+                "Engine process crashed repeatedly (exceeded 3 restarts within 60 seconds)"
+            )
+
+        logger.warning("Engine process is not running or crashed. Attempting auto-restart...")
+        self._kill_and_reset()
+        try:
+            self.start()
+            self._restart_times.append(time.monotonic())
+            logger.info("Engine process auto-restarted successfully")
+        except Exception as e:
+            self._kill_and_reset()
+            raise EngineNotReady(f"Failed to auto-restart engine: {e}") from e
+
+    def _kill_and_reset(self) -> None:
+        """Force kill the engine process if running, drain queues, and mark as not ready."""
+        self._ready = False
+        if self.process is not None:
+            try:
+                self.process.kill()
+                self.process.wait(timeout=1.0)
+            except Exception:
+                pass
+            self.process = None
+        # Drain line queue to avoid leaking stale output into subsequent searches
+        while not self._line_queue.empty():
+            try:
+                self._line_queue.get_nowait()
+            except queue.Empty:
+                break
 
     def start(self, timeout: float = 10.0) -> None:
         """Spawn the engine and complete the UCI handshake."""
@@ -136,8 +176,7 @@ class EngineManager:
             raise EngineBusy("Another search is in progress")
 
         try:
-            if not self.is_ready():
-                raise EngineNotReady("Engine is not running")
+            self._ensure_alive_and_ready()
 
             # Reset engine state between searches
             self._send("ucinewgame")
@@ -217,18 +256,22 @@ class EngineManager:
         """
         Read info lines until bestmove. Sends 'stop' on timeout.
 
-        The engine always responds to 'stop' with a bestmove line,
-        so we use a timer to enforce the server-side timeout.
+        The engine always responds to 'stop' with a bestmove line within
+        a 2-second grace period. If it fails to answer 'stop', the process
+        is forcefully killed and cleaned up to prevent stale leaks.
         """
         last_info: dict = {}
         timed_out = False
         stop_sent = False
+        stop_time: Optional[float] = None
+        stop_grace = 2.0
 
         def _on_timeout():
-            nonlocal timed_out, stop_sent
+            nonlocal timed_out, stop_sent, stop_time
             timed_out = True
             if not stop_sent:
                 stop_sent = True
+                stop_time = time.monotonic()
                 logger.info("Search timeout — sending stop")
                 try:
                     self._send("stop")
@@ -240,13 +283,20 @@ class EngineManager:
 
         try:
             while True:
-                line = self._readline(timeout=10.0)
+                # If stop was sent, check if 2s grace period expired
+                if stop_sent and stop_time is not None:
+                    if time.monotonic() - stop_time >= stop_grace:
+                        logger.error("Engine failed to answer 'stop' within 2s grace — killing process")
+                        self._kill_and_reset()
+                        raise EngineError("Engine failed to answer 'stop' within 2.0s; process killed")
+
+                line = self._readline(timeout=0.2)
                 if line is None:
-                    # No output for 10 seconds
-                    if timed_out:
-                        raise EngineError(
-                            "Engine did not respond after stop"
-                        )
+                    # Check if engine process died
+                    if self.process is not None and self.process.poll() is not None:
+                        logger.error("Engine process terminated unexpectedly during search")
+                        self._kill_and_reset()
+                        raise EngineNotReady("Engine process terminated unexpectedly during search")
                     continue
 
                 logger.debug("← %s", line)
