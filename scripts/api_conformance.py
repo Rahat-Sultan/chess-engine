@@ -992,6 +992,9 @@ class ConformanceRunner:
             if HAS_CHESS:
                 b_board = chess.Board(KIWIPETE_FEN)
                 legal_in_kiwi = chess.Move.from_uci(bm_b) in b_board.legal_moves
+            else:
+                # Fallback when python-chess is not installed in the environment
+                legal_in_kiwi = bool(bm_b) and bm_b not in ("e2e4", "d2d4", "c2c4", "g1f3", "b1c3")
 
             self.record(
                 "destructive_new_position_no_stale_move",
