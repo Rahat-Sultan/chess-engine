@@ -215,7 +215,7 @@
 - NNUE.MakUnmakeDoesNotCorruptEval
 - NNUE.HandcraftedAndNNUEAgreeOnSign
 
-## build/test_api (12 tests)
+## build/test_api (19 tests)
 - API.HealthNoAuthRequired
 - API.ApiKeyNotSetAllowsAnalyze
 - API.ApiKeySetRejectsWithoutKey
@@ -228,5 +228,12 @@
 - API.ErrorSchemaConsistentShape
 - API.HealthAnswersImmediatelyDuringSearch
 - API.ConcurrentSearchReturns409Immediately
+- API.EngineAutoRecoveryKillIdle
+- API.EngineAutoRecoveryKillMidSearch
+- API.EngineNoStaleMoveAfterNewPosition
+- API.MateInOneReturnsScoreMate1
+- API.MateInTwoReturnsScoreMate2
+- API.SideBeingMatedReturnsNegativeMate
+- API.SearchCapsConfigurableViaEnv
 
-# Total: 212 tests across 8 binaries
+# Total: 219 tests across 8 binaries

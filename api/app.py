@@ -484,7 +484,14 @@ async def analyze(request: AnalyzeRequest):
 
     score = None
     if "score_type" in raw and "score_value" in raw:
-        score = ScoreInfo(type=raw["score_type"], value=raw["score_value"])
+        stype = raw["score_type"]
+        sval = raw["score_value"]
+        # In src/uci.cpp:93, the engine computes mate moves for losing mate as -((-plies + 1) / 2).
+        # For a 2-ply mate (being mated in 1 move), integer truncation (-1 / 2 = 0) causes the engine
+        # to emit 'score mate 0'. Normalize this to -1 (being mated in 1 move).
+        if stype == "mate" and sval == 0:
+            sval = -1
+        score = ScoreInfo(type=stype, value=sval)
 
     timed_out = raw.get("timed_out", False)
 
