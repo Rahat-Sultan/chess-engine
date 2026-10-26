@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import chess
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.engine_manager import EngineManager, EngineBusy, EngineNotReady, EngineError
@@ -173,6 +175,40 @@ app.add_middleware(
 )
 
 
+# ─── API Key Authentication Middleware ─────────────────────────────────────────
+
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):
+    """
+    Optional API-key authentication.
+    If the environment variable API_KEY is set:
+      - GET /health is always permitted (for container orchestration / healthchecks)
+      - OPTIONS preflight is permitted (for CORS)
+      - All other endpoints require 'X-API-Key' matching API_KEY via constant-time comparison (401 otherwise)
+    If API_KEY is not set:
+      - Behavior is unchanged (open access).
+    """
+    expected_key = os.environ.get("API_KEY")
+    if expected_key:
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if request.method == "GET" and request.url.path.rstrip("/") == "/health":
+            return await call_next(request)
+
+        provided_key = request.headers.get("X-API-Key")
+        if not provided_key or not secrets.compare_digest(provided_key, expected_key):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "error": "Unauthorized",
+                    "detail": "Invalid or missing API key",
+                },
+            )
+    return await call_next(request)
+
+
 # ─── GET /health ───────────────────────────────────────────────────────────────
 
 
@@ -196,6 +232,7 @@ async def health():
     summary="Analyze a chess position",
     responses={
         400: {"model": ErrorResponse, "description": "Invalid FEN"},
+        401: {"model": ErrorResponse, "description": "Unauthorized (missing or invalid API key)"},
         409: {"model": ErrorResponse, "description": "Engine busy"},
         503: {"model": ErrorResponse, "description": "Engine unavailable"},
         504: {"model": ErrorResponse, "description": "Analysis timed out"},

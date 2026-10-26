@@ -215,4 +215,12 @@
 - NNUE.MakUnmakeDoesNotCorruptEval
 - NNUE.HandcraftedAndNNUEAgreeOnSign
 
-# Total: 200 tests across 7 binaries
+## build/test_api (6 tests)
+- API.HealthNoAuthRequired
+- API.ApiKeyNotSetAllowsAnalyze
+- API.ApiKeySetRejectsWithoutKey
+- API.ApiKeySetRejectsWithWrongKey
+- API.ApiKeySetAcceptsWithValidKey
+- API.HealthSucceedsEvenWhenApiKeySet
+
+# Total: 206 tests across 8 binaries

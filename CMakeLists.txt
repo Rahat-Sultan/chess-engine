@@ -203,6 +203,25 @@ if(BUILD_TESTS)
 
     add_test(NAME NNUETests COMMAND test_nnue
              WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+    # Phase 6 tests: API endpoints and authentication
+    configure_file(
+        ${PROJECT_SOURCE_DIR}/tests/test_api.sh
+        ${CMAKE_BINARY_DIR}/test_api
+        COPYONLY
+    )
+
+    add_custom_target(test_api ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/tests/test_api.sh
+            ${CMAKE_BINARY_DIR}/test_api
+        COMMAND chmod +x ${CMAKE_BINARY_DIR}/test_api
+        DEPENDS ${PROJECT_SOURCE_DIR}/tests/test_api.sh
+        COMMENT "Staging test_api runner in build directory"
+    )
+
+    add_test(NAME ApiTests COMMAND ${CMAKE_BINARY_DIR}/test_api
+             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 endif()
 
 # ─── Install ──────────────────────────────────────────────────────────────────
