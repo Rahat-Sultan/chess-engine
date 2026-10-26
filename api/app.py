@@ -35,7 +35,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -56,11 +56,12 @@ ENGINE_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "build", "chess_engine"),
 )
 
-# Safe maximums to prevent unbounded CPU use (spec §7.9)
-MAX_DEPTH = 20
-MAX_MOVETIME_MS = 30_000       # 30 seconds
-MAX_NODES = 10_000_000
-DEFAULT_TIMEOUT_SEC = 30.0    # server-side safety timeout
+# Safe maximums to prevent unbounded CPU use (configurable via env vars)
+MAX_DEPTH = int(os.environ.get("MAX_DEPTH", "20"))
+MAX_MOVETIME_MS = int(os.environ.get("MAX_MOVETIME_MS", "30000"))
+MAX_NODES = int(os.environ.get("MAX_NODES", "10000000"))
+REQUEST_TIMEOUT_SEC = float(os.environ.get("REQUEST_TIMEOUT_SEC", "30.0"))
+DEFAULT_TIMEOUT_SEC = REQUEST_TIMEOUT_SEC    # server-side safety timeout
 
 # ─── Engine manager (global, managed by lifespan) ──────────────────────────────
 
@@ -85,6 +86,19 @@ class AnalyzeLimits(BaseModel):
         default=None, ge=1, le=MAX_NODES,
         description="Node count limit (1–10000000)",
     )
+
+    @model_validator(mode="after")
+    def validate_runtime_caps(self) -> "AnalyzeLimits":
+        curr_max_depth = int(os.environ.get("MAX_DEPTH", str(MAX_DEPTH)))
+        curr_max_movetime = int(os.environ.get("MAX_MOVETIME_MS", str(MAX_MOVETIME_MS)))
+        curr_max_nodes = int(os.environ.get("MAX_NODES", str(MAX_NODES)))
+        if self.depth is not None and self.depth > curr_max_depth:
+            raise ValueError(f"depth {self.depth} exceeds configured MAX_DEPTH ({curr_max_depth})")
+        if self.movetime is not None and self.movetime > curr_max_movetime:
+            raise ValueError(f"movetime {self.movetime} exceeds configured MAX_MOVETIME_MS ({curr_max_movetime})")
+        if self.nodes is not None and self.nodes > curr_max_nodes:
+            raise ValueError(f"nodes {self.nodes} exceeds configured MAX_NODES ({curr_max_nodes})")
+        return self
 
 
 class AnalyzeRequest(BaseModel):
@@ -425,6 +439,7 @@ async def analyze(request: AnalyzeRequest):
         depth = 6
 
     # ── Run the analysis ────────────────────────────────────────────────────
+    effective_timeout = float(os.environ.get("REQUEST_TIMEOUT_SEC", str(REQUEST_TIMEOUT_SEC)))
     try:
         raw = await run_in_threadpool(
             engine.analyze,
@@ -432,7 +447,7 @@ async def analyze(request: AnalyzeRequest):
             depth=depth,
             movetime=movetime,
             nodes=nodes,
-            timeout=DEFAULT_TIMEOUT_SEC,
+            timeout=effective_timeout,
         )
     except EngineBusy:
         raise HTTPException(
