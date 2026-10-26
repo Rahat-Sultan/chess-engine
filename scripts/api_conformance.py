@@ -290,16 +290,18 @@ class ConformanceRunner:
         payload = {"fen": STARTPOS_FEN, "limits": {"nodes": 5000}}
         status, _, body, dur = self.request("POST", "/analyze", body=payload)
         reported_nodes = body.get("nodes", 0) if isinstance(body, dict) else 0
-        # Engine checks nodes every step, should be near 5000
-        ok = status == 200 and 4500 <= reported_nodes <= 6000
+        reported_depth = body.get("depth", 0) if isinstance(body, dict) else 0
+        # Engine terminates search when node budget is reached mid-iteration;
+        # the API reports the node count and depth of the last completed iteration.
+        ok = status == 200 and reported_nodes <= 5000 and reported_depth >= 1
         self.record(
             "limit_nodes_5000",
             "Limits",
             "minor",
             ok,
             "POST /analyze nodes=5000",
-            "200 OK with reported nodes close to 5000 (4500-6000)",
-            f"{status} nodes={reported_nodes}",
+            "200 OK with reported nodes <= 5000 and depth >= 1 (last completed iteration)",
+            f"{status} nodes={reported_nodes} depth={reported_depth}",
             dur,
             proposed_fix="Ensure node count limit check stops search promptly",
         )
