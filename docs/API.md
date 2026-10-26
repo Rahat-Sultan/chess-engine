@@ -120,12 +120,27 @@ Analyzes a chess position specified by FEN and returns the engine's best move, p
 |:---|:---|:---:|:---:|:---:|:---|
 | `fen` | `string` | **Yes** | — | Valid FEN tokens | Chess position in Forsyth–Edwards Notation. |
 | `limits` | `object` | No | `{ "depth": 6 }` | — | Search constraint limits. If omitted or empty, defaults to `depth=6`. |
-| `limits.depth` | `integer` | No | `null` | `1 <= depth <= 20` | Maximum search depth in plies. |
-| `limits.movetime` | `integer` | No | `null` | `10 <= movetime <= 30000` | Search time limit in milliseconds. |
-| `limits.nodes` | `integer` | No | `null` | `1 <= nodes <= 10000000` | Maximum node budget. |
+| `limits.depth` | `integer` | No | `null` | `1 <= depth <= 20` | Maximum search depth in plies (configurable via `MAX_DEPTH`). |
+| `limits.movetime` | `integer` | No | `null` | `10 <= movetime <= 30000` | Search time limit in milliseconds (configurable via `MAX_MOVETIME_MS`). |
+| `limits.nodes` | `integer` | No | `null` | `1 <= nodes <= 10000000` | Maximum node budget (configurable via `MAX_NODES`). |
 
 > [!NOTE]
 > Extra unrecognized fields in the request body are strictly forbidden and rejected with `422 Unprocessable Entity`.
+
+#### Response Schema Details
+- `success`: `boolean`. Always `true` on successful response.
+- `bestmove`: `string | null`. Engine's chosen move in UCI notation (e.g. `"e2e4"`, `"a7a8q"`). Returns `null` for terminal positions (checkmate or stalemate).
+- `ponder`: `string | null`. Predicted opponent reply in UCI notation, or `null`.
+- `score`: `object | null`. Evaluation score with `type` (`"cp"` or `"mate"`) and integer `value` (in full moves).
+- `depth`: `integer`. Depth reached in completed iterative deepening plies.
+- `nodes`: `integer`. Total nodes searched in the **last completed iterative deepening iteration**. When `limits.nodes` is specified, the search halts upon exceeding the budget mid-iteration; the API returns the metrics from the last completed iteration (`nodes <= requested_nodes`).
+- `nps`: `integer`. Nodes per second search speed.
+- `time_ms`: `integer`. Search time elapsed in milliseconds.
+- `pv`: `string[]`. Principal variation move sequence in UCI notation.
+- `timed_out`: `boolean`. **True** if the engine exceeded the server-side safety timeout (`REQUEST_TIMEOUT_SEC`, default 30.0s). In this event, the server returns **HTTP 200 OK** containing the partial best move and stats from the last completed iteration. (HTTP 504 Gateway Timeout is only returned if the engine fails to produce any search output).
+
+> [!IMPORTANT]
+> **Client Disconnect Handling**: If an HTTP client disconnects or aborts the connection while `/analyze` is executing, the worker thread continues running the engine search in the background until the search finishes or the safety timeout expires (up to 30.0s). The engine remains busy and subsequent requests during this window receive `409 Conflict`.
 
 ---
 
@@ -415,24 +430,36 @@ Evaluations follow standard UCI conventions: **scores are reported from the pers
   - Negative score: Side to move is losing.
   - *Example*: In `4k3/8/8/8/8/8/q7/4K3 b - - 0 1`, Black is to move and up a Queen; the score is positive (`score: { "type": "cp", "value": 900 }`).
 - **Mate (`"mate"`)**:
-  - Positive $+N$: Side to move forces checkmate in $N$ moves/plies.
-  - Negative $-N$: Side to move is checkmated in $N$ moves/plies.
+  - Scores are expressed in **full moves** (not plies), matching standard UCI protocol.
+  - Positive $+N$: Side to move forces checkmate in $N$ full moves ($+1$ for mate in 1 move, $+2$ for mate in 2 moves).
+  - Negative $-N$: Side to move is checkmated in $N$ full moves ($-1$ if opponent delivers checkmate on the next move).
+  - *Engine Nuance*: In `src/uci.cpp:93`, integer truncation in the losing mate formula causes a 2-ply mate suffered to emit `score mate 0` over raw UCI; the API adapter detects this and normalizes `mate 0` to `-1` (being mated in 1 move).
 
 ---
 
 ## 7. Client Integration Guidelines
 
 ### 7.1. Timeout Configuration
-- The engine enforces a 30.0-second safety timeout.
-- Client HTTP requests should set read timeouts to at least **35.0 seconds** to allow structured timeout responses to complete.
+- The engine enforces a 30.0-second server-side safety timeout (configurable via `REQUEST_TIMEOUT_SEC`).
+- Client HTTP requests should set read timeouts to at least **35.0 seconds** to allow structured responses or timeout recoveries to complete.
 
-### 7.2. Retry Strategy for 409 Conflict
-Because only 1 search runs at a time, concurrent callers receive 409 Conflict immediately (<5ms):
+### 7.2. Concurrency & Client Disconnect
+- Exactly one search runs at a time.
+- If a client disconnects mid-search, the search continues in the background until completion (up to 30.0s). The engine remains marked busy, and other callers receive `409 Conflict`.
+
+### 7.3. Retry Strategy for 409 Conflict
+Because searches are serialized, concurrent callers receive `409 Conflict` immediately (<5ms). Clients should implement exponential backoff with random jitter:
+- **Initial Delay**: 50–100 ms
+- **Backoff Factor**: 1.5–2.0x per attempt
+- **Jitter**: Random 20–50 ms jitter to prevent lockstep thundering herds
+- **Max Retries**: 5–10 attempts, depending on expected search durations.
+
 ```python
+import random
 import time
 import requests
 
-def analyze_with_retry(payload, api_key=None, max_retries=5, base_delay=0.1):
+def analyze_with_retry(payload, api_key=None, max_retries=8, base_delay=0.1):
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["X-API-Key"] = api_key
@@ -441,8 +468,9 @@ def analyze_with_retry(payload, api_key=None, max_retries=5, base_delay=0.1):
         resp = requests.post("http://localhost:8000/analyze", json=payload, headers=headers, timeout=35.0)
         if resp.status_code != 409:
             return resp
-        # Exponential backoff with jitter
-        sleep_time = base_delay * (2 ** attempt) + (attempt * 0.05)
+        # Exponential backoff with random jitter
+        jitter = random.uniform(0.02, 0.06)
+        sleep_time = (base_delay * (1.8 ** attempt)) + jitter
         time.sleep(sleep_time)
     return resp
 ```
@@ -453,11 +481,14 @@ def analyze_with_retry(payload, api_key=None, max_retries=5, base_delay=0.1):
 
 | Stockfish / Service Feature | Status | Adapter / Engine Behavior |
 |:---|:---:|:---|
-| **Analyze by Depth** | **Implemented** | Supported via `limits.depth` (1..20). |
-| **Analyze by Movetime** | **Implemented** | Supported via `limits.movetime` (10..30000 ms). |
-| **Analyze by Nodes** | **Implemented** | Supported via `limits.nodes` (1..10000000). |
+| **Analyze by Depth** | **Implemented** | Supported via `limits.depth` (1..20, configurable via `MAX_DEPTH`). |
+| **Analyze by Movetime** | **Implemented** | Supported via `limits.movetime` (10..30000 ms, configurable via `MAX_MOVETIME_MS`). |
+| **Analyze by Nodes** | **Implemented** | Supported via `limits.nodes` (1..10000000, configurable via `MAX_NODES`). Reports last completed iteration. |
 | **Principal Variation (PV)** | **Implemented** | Returned as UCI move string list in `pv`. |
-| **Centipawn & Mate Scoring** | **Implemented** | Side-to-move perspective (`cp` and `mate`). |
+| **Centipawn & Mate Scoring** | **Implemented** | Side-to-move perspective (`cp` and `mate` in full moves). |
+| **Response Fields** | **PARTIAL** | Returned: `success`, `bestmove`, `ponder`, `score`, `depth`, `nodes`, `nps`, `time_ms`, `pv`, `timed_out`. Missing: `multipv`, `hashfull`, `tbhits`, `seldepth`, `wdl`. |
+| **Game Status / Termination**| **PARTIAL** | Terminal checkmate and stalemate in input FEN return `bestmove: null`. Missing: 50-move rule, threefold repetition, and insufficient material claims in API response. |
+| **Versioning** | **PARTIAL** | Engine build version is exposed via `GET /health` (`engine_version`). Missing: API path versioning (e.g. `/v1/analyze`) and API SemVer response header. |
 | **Multi-PV (Multiple Lines)** | **Missing** | Computes single best line only (`MultiPV=1`). |
 | **WDL Probability Output** | **Missing** | Win/Draw/Loss model estimates not implemented. |
 | **Syzygy Tablebase Probing** | **Missing** | Syzygy probing not supported. |
