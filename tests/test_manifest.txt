@@ -215,7 +215,7 @@
 - NNUE.MakUnmakeDoesNotCorruptEval
 - NNUE.HandcraftedAndNNUEAgreeOnSign
 
-## build/test_api (10 tests)
+## build/test_api (12 tests)
 - API.HealthNoAuthRequired
 - API.ApiKeyNotSetAllowsAnalyze
 - API.ApiKeySetRejectsWithoutKey
@@ -226,5 +226,7 @@
 - API.FenValidationRejectsHardErrors
 - API.FenValidationAcceptsValidAndToleratedFens
 - API.ErrorSchemaConsistentShape
+- API.HealthAnswersImmediatelyDuringSearch
+- API.ConcurrentSearchReturns409Immediately
 
-# Total: 210 tests across 8 binaries
+# Total: 212 tests across 8 binaries

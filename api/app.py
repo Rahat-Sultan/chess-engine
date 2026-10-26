@@ -30,11 +30,13 @@ from typing import Any, Optional, Union
 
 import chess
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.engine_manager import EngineManager, EngineBusy, EngineNotReady, EngineError
@@ -276,7 +278,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={
             "success": False,
             "error": "Unprocessable Entity",
-            "detail": exc.errors(),
+            "detail": jsonable_encoder(exc.errors()),
         },
     )
 
@@ -424,7 +426,8 @@ async def analyze(request: AnalyzeRequest):
 
     # ── Run the analysis ────────────────────────────────────────────────────
     try:
-        raw = engine.analyze(
+        raw = await run_in_threadpool(
+            engine.analyze,
             fen=request.fen,
             depth=depth,
             movetime=movetime,

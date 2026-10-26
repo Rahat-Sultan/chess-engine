@@ -199,6 +199,60 @@ def test_error_schema_consistent_shape(client: TestClient):
         check_shape(test_client_no_raise.post("/analyze", json={"fen": TEST_FEN}), 500)
 
 
+def test_health_answers_immediately_during_search(client: TestClient):
+    import threading
+    import time
+
+    health_result = {}
+
+    def run_long():
+        client.post("/analyze", json={"fen": TEST_FEN, "limits": {"movetime": 500}})
+
+    def run_health():
+        time.sleep(0.05)
+        t0 = time.time()
+        r = client.get("/health")
+        health_result["status"] = r.status_code
+        health_result["duration_ms"] = (time.time() - t0) * 1000
+
+    t1 = threading.Thread(target=run_long)
+    t2 = threading.Thread(target=run_health)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert health_result.get("status") == 200
+    assert health_result.get("duration_ms", 9999) < 250, f"Health took too long: {health_result}"
+
+
+def test_concurrent_search_returns_409_immediately(client: TestClient):
+    import threading
+    import time
+
+    second_result = {}
+
+    def run_long():
+        client.post("/analyze", json={"fen": TEST_FEN, "limits": {"movetime": 500}})
+
+    def run_second():
+        time.sleep(0.05)
+        t0 = time.time()
+        r = client.post("/analyze", json={"fen": TEST_FEN, "limits": {"depth": 1}})
+        second_result["status"] = r.status_code
+        second_result["duration_ms"] = (time.time() - t0) * 1000
+
+    t1 = threading.Thread(target=run_long)
+    t2 = threading.Thread(target=run_second)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert second_result.get("status") == 409
+    assert second_result.get("duration_ms", 9999) < 250, f"Second analyze took too long: {second_result}"
+
+
 ALL_TESTS = [
     ("API.HealthNoAuthRequired", test_health_no_auth_required),
     ("API.ApiKeyNotSetAllowsAnalyze", test_api_key_not_set_allows_analyze),
@@ -210,6 +264,8 @@ ALL_TESTS = [
     ("API.FenValidationRejectsHardErrors", test_fen_validation_rejects_hard_errors),
     ("API.FenValidationAcceptsValidAndToleratedFens", test_fen_validation_accepts_valid_and_tolerated_fens),
     ("API.ErrorSchemaConsistentShape", test_error_schema_consistent_shape),
+    ("API.HealthAnswersImmediatelyDuringSearch", test_health_answers_immediately_during_search),
+    ("API.ConcurrentSearchReturns409Immediately", test_concurrent_search_returns_409_immediately),
 ]
 
 
