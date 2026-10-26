@@ -12,7 +12,7 @@ COPY CMakeLists.txt ./
 COPY include/ ./include/
 COPY src/ ./src/
 
-RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF \
     && cmake --build build --target chess_engine
 
 # Stage 2: Runtime environment

@@ -94,113 +94,116 @@ target_include_directories(chess_engine PRIVATE
 target_link_libraries(chess_engine PRIVATE chess_core)
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
-enable_testing()
+option(BUILD_TESTS "Build unit tests" ON)
 
-# Phase 1 unit tests: types + board
-add_executable(test_chess
-    tests/unit/test_main.cpp
-    tests/unit/test_types.cpp
-    tests/unit/test_board.cpp
-)
+if(BUILD_TESTS)
+    enable_testing()
 
-target_include_directories(test_chess PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-)
+    # Phase 1 unit tests: types + board
+    add_executable(test_chess
+        tests/unit/test_main.cpp
+        tests/unit/test_types.cpp
+        tests/unit/test_board.cpp
+    )
 
-target_link_libraries(test_chess PRIVATE chess_core)
+    target_include_directories(test_chess PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
 
-add_test(NAME UnitTests COMMAND test_chess)
+    target_link_libraries(test_chess PRIVATE chess_core)
 
-# Phase 2 unit tests: movegen
-add_executable(test_movegen
-    tests/unit/test_main.cpp
-    tests/unit/test_movegen.cpp
-)
+    add_test(NAME UnitTests COMMAND test_chess)
 
-target_include_directories(test_movegen PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-)
+    # Phase 2 unit tests: movegen
+    add_executable(test_movegen
+        tests/unit/test_main.cpp
+        tests/unit/test_movegen.cpp
+    )
 
-target_link_libraries(test_movegen PRIVATE chess_core)
+    target_include_directories(test_movegen PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
 
-add_test(NAME MovegenTests COMMAND test_movegen)
+    target_link_libraries(test_movegen PRIVATE chess_core)
 
-# Phase 2 perft tests
-add_executable(test_perft
-    tests/perft/test_perft.cpp
-)
+    add_test(NAME MovegenTests COMMAND test_movegen)
 
-target_include_directories(test_perft PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}           # for tests/perft/perft.hpp include path
-    ${PROJECT_SOURCE_DIR}/tests/unit  # for test_framework.hpp
-)
+    # Phase 2 perft tests
+    add_executable(test_perft
+        tests/perft/test_perft.cpp
+    )
 
-target_link_libraries(test_perft PRIVATE chess_core)
+    target_include_directories(test_perft PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}           # for tests/perft/perft.hpp include path
+        ${PROJECT_SOURCE_DIR}/tests/unit  # for test_framework.hpp
+    )
 
-add_test(NAME PerftTests COMMAND test_perft)
+    target_link_libraries(test_perft PRIVATE chess_core)
 
-# Phase 3 unit tests: search + evaluation
-add_executable(test_search
-    tests/unit/test_main.cpp
-    tests/unit/test_search.cpp
-)
+    add_test(NAME PerftTests COMMAND test_perft)
 
-target_include_directories(test_search PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/tests/unit
-)
+    # Phase 3 unit tests: search + evaluation
+    add_executable(test_search
+        tests/unit/test_main.cpp
+        tests/unit/test_search.cpp
+    )
 
-target_link_libraries(test_search PRIVATE chess_core)
+    target_include_directories(test_search PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/tests/unit
+    )
 
-add_test(NAME SearchTests COMMAND test_search)
+    target_link_libraries(test_search PRIVATE chess_core)
 
-# Phase 4 unit tests: uci protocol controller
-add_executable(test_uci
-    tests/unit/test_main.cpp
-    tests/uci/test_uci.cpp
-)
+    add_test(NAME SearchTests COMMAND test_search)
 
-target_include_directories(test_uci PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/tests/unit
-)
+    # Phase 4 unit tests: uci protocol controller
+    add_executable(test_uci
+        tests/unit/test_main.cpp
+        tests/uci/test_uci.cpp
+    )
 
-target_link_libraries(test_uci PRIVATE chess_core)
+    target_include_directories(test_uci PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/tests/unit
+    )
 
-add_test(NAME UciTests COMMAND test_uci)
+    target_link_libraries(test_uci PRIVATE chess_core)
 
-# Phase 5 unit tests: transposition table
-add_executable(test_transposition
-    tests/unit/test_main.cpp
-    tests/unit/test_transposition.cpp
-)
+    add_test(NAME UciTests COMMAND test_uci)
 
-target_include_directories(test_transposition PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/tests/unit
-)
+    # Phase 5 unit tests: transposition table
+    add_executable(test_transposition
+        tests/unit/test_main.cpp
+        tests/unit/test_transposition.cpp
+    )
 
-target_link_libraries(test_transposition PRIVATE chess_core)
+    target_include_directories(test_transposition PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/tests/unit
+    )
 
-add_test(NAME TranspositionTests COMMAND test_transposition)
+    target_link_libraries(test_transposition PRIVATE chess_core)
 
-# Phase 7 unit tests: NNUE evaluator
-add_executable(test_nnue
-    tests/unit/test_main.cpp
-    tests/unit/test_nnue.cpp
-)
+    add_test(NAME TranspositionTests COMMAND test_transposition)
 
-target_include_directories(test_nnue PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/tests/unit
-)
+    # Phase 7 unit tests: NNUE evaluator
+    add_executable(test_nnue
+        tests/unit/test_main.cpp
+        tests/unit/test_nnue.cpp
+    )
 
-target_link_libraries(test_nnue PRIVATE chess_core)
+    target_include_directories(test_nnue PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/tests/unit
+    )
 
-add_test(NAME NNUETests COMMAND test_nnue
-         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
-install(TARGETS chess_engine DESTINATION bin)
+    target_link_libraries(test_nnue PRIVATE chess_core)
+
+    add_test(NAME NNUETests COMMAND test_nnue
+             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+endif()
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 install(TARGETS chess_engine DESTINATION bin)
